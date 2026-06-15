@@ -45,5 +45,6 @@ runs_gapa/
 tests/
 video/
 report/
+report/GPT_Robotics/
 
 /gapa/memory/success/success_memory.jsonl
