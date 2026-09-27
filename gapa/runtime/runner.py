@@ -20,7 +20,7 @@ from ..domain.objects import CABINET_SOURCE_OBJECTS, object_options, validate_ob
 from ..domain.task import FailureReport, TaskDSL
 from ..clients.llm import LLMClient
 from ..memory import SuccessMemoryManager
-from ..perception import OraclePerception, VLMPerception
+from ..perception import OraclePerception, VLMPerception, VLMFeedbackProvider
 from ..planning import TaskPlanner, TaskValidator
 from ..media.video_builder import build_card_video, build_image_video, concat_video_segments, split_video_at_fractions
 from .api import ProgramCandidate, execute_program_candidate, _initial_poses
@@ -352,7 +352,7 @@ class GapaRunner:
             "scene_cache": {"key": cache_key, "hit": bool(cached), "source": "disk" if cached else "created"},
         }
 
-    def run_task(self, instruction: str, perception_mode: str = "oracle") -> dict[str, Any]:
+    def run_task(self, instruction: str, perception_mode: str = "oracle", *, stage_feedback: bool = False) -> dict[str, Any]:
         # 功能：执行一次完整流程或子流程，并返回结构化运行结果；该方法属于 GapaRunner，会复用该类维护的上下文。。
         # 参数：self：当前类实例，提供内部状态和依赖对象；instruction：用户输入的自然语言任务指令；perception_mode：perception mode 输入，类型约束为 str，默认值为 'oracle'。
         # 返回：返回 dict[str, Any] 类型结果；调用方依赖该结构继续执行或生成诊断输出。
@@ -360,6 +360,7 @@ class GapaRunner:
         if self.current_env is None or self.current_scene is None or self.current_scene_seed is None:
             raise ValueError("Generate a scene before running a task.")
         perception_provider = self._make_perception_provider(perception_mode)
+        stage_feedback_provider = VLMFeedbackProvider() if stage_feedback else None
 
         run_id = self._new_run_id()
         run_dir = self.runs_root / run_id
@@ -375,6 +376,7 @@ class GapaRunner:
             "cluttered_table": cluttered_table,
             "cluttered_table_info": self._cluttered_table_info(self.current_env),
             "perception_mode": perception_mode,
+            "stage_feedback_enabled": bool(stage_feedback),
             "scene_source": "pre_task_current_scene",
             "preview_images": dict(self.current_preview_images or {}),
         }
@@ -536,6 +538,7 @@ class GapaRunner:
                     initial_poses=recovery_initial_poses,
                     perception_provider=perception_provider,
                     perception_mode=perception_mode,
+                    stage_feedback_provider=stage_feedback_provider,
                 )
                 if failure is not None:
                     self._attach_recovery_context(failure, attempt_env, attempt_id, current_task)
@@ -648,6 +651,7 @@ class GapaRunner:
                 "status": "success",
                 "instruction": instruction,
                 "perception_mode": perception_mode,
+                "stage_feedback_enabled": bool(stage_feedback),
                 "task_dsl": task.to_dict(),
                 "successful_program_id": successful_program.program_id,
                 "successful_attempt_path": self._public_path(successful_path),
@@ -665,6 +669,7 @@ class GapaRunner:
                 "status": "failed",
                 "instruction": instruction,
                 "perception_mode": perception_mode,
+                "stage_feedback_enabled": bool(stage_feedback),
                 "stage": selection.selection_reason,
                 "failure_stage": selection.selection_reason,
                 "task_dsl": task.to_dict(),
@@ -904,12 +909,14 @@ def replay_episode(api, continue_after_recorded_failure=True):
             "success_check": success_check if isinstance(success_check, dict) else None,
             "last_api_call": failure.details.get("last_api_call") or (api_trace[-1] if api_trace else None),
             "api_trace_tail": api_trace[-5:],
+            "stage_feedback": failure.details.get("stage_feedback"),
             "guidance": [
                 "The next generated play_once(api) will run in this same simulator state.",
                 "Do not assume the scene has reset to the initial layout.",
                 "Use api.pose(...) to observe current object poses before corrective actions.",
                 "Avoid repeating already completed setup actions unless the recovery context shows they are still needed.",
                 "If last_api_call.held_after does not contain the source object, pick the source again before retrying place.",
+                "Visual stage feedback is fallible. Reobserve the object and gripper state before recovery; no reset or release was performed by the monitor.",
             ],
             "path": str(path),
         }
