@@ -1,0 +1,35 @@
+{
+  "probe": "controlled gripper release, not natural failure",
+  "injected": true,
+  "drop_dz_m": 0.08118081092834473,
+  "implementation_commit": "493d582",
+  "verdict": "observed_drop_not_interrupted",
+  "interrupted_at_after_lift": false,
+  "native_success": false,
+  "camera_reports": [
+    {
+      "camera_name": "head_camera",
+      "status": "failed",
+      "confidence": 0.95,
+      "evidence": [
+        "The cup is on the table and not being held by the gripper."
+      ]
+    },
+    {
+      "camera_name": "left_camera",
+      "status": "uncertain",
+      "confidence": 0.1,
+      "evidence": [
+        "image shows only partial view of table and robot arm tip; cup is not visible"
+      ]
+    },
+    {
+      "camera_name": "right_camera",
+      "status": "ok",
+      "confidence": 0.95,
+      "evidence": [
+        "The cup is visible and being held by the gripper, indicating it has been successfully lifted."
+      ]
+    }
+  ]
+}

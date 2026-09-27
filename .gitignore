@@ -53,6 +53,8 @@ report/GPT_Robotics/
 # Curated simulation previews and maintained regression tests.
 !assets/demos/
 !assets/demos/*.gif
+!assets/demos/drop-head.png
+!assets/demos/drop-wrist.png
 !assets/demos/README.md
 !tests/
 !tests/test_gapa_success_memory.py
