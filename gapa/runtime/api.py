@@ -2485,10 +2485,11 @@ class SafeSkillAPI:
         target_name: str | None = None,
         relation: str | None = None,
     ) -> None:
-        """Observe completed skill boundaries; only confident failures interrupt.
+        """Hybrid visual and simulator-state checks at completed skill boundaries.
 
         The monitor never declares task success or moves/resets the robot. An
-        unavailable or inconclusive VLM leaves the deterministic path in charge.
+        inconclusive VLM is retained separately from the lift postcondition;
+        unavailable simulator state never counts as a passed state check.
         """
         if self.stage_feedback_provider is None:
             return
@@ -2529,12 +2530,30 @@ class SafeSkillAPI:
                     record["non_actionable_reason"] = "unmarked_target_requires_geometric_check"
                 else:
                     record["decision"] = "interrupt"
+                    record["decision_source"] = "vlm"
                 if record["decision"] == "interrupt" and stage == "after_lift" and report.failure_type in {"object_not_grasped", "object_slipped"}:
                     # Invalidate the optimistic bookkeeping, without opening the
                     # physical gripper or assuming the simulator has reset.
                     self.held.pop(name, None)
         except Exception as exc:
             record["report"] = {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+        if stage == "after_lift":
+            stage_check = {"source": "simulator_pose", "stage": "after_lift", "minimum_lift_m": 0.03}
+            try:
+                before_z = float(trace["objects_before"][name][2])
+                current_z = float(_pose_to_list(self.env.get_actor(name).get_pose())[2])
+                if not math.isfinite(before_z) or not math.isfinite(current_z):
+                    raise ValueError("Non-finite object height.")
+                lifted = current_z - before_z
+                stage_check.update(status="passed" if lifted >= 0.03 else "failed",
+                                   before_z=before_z, current_z=current_z, lift_m=lifted)
+            except Exception as exc:
+                stage_check.update(status="unavailable", error=f"{type(exc).__name__}: {exc}")
+            record["stage_check"] = stage_check
+            if stage_check["status"] == "failed":
+                record["decision"] = "interrupt"
+                record["decision_source"] = "simulator_pose"
+                self.held.pop(name, None)
         record["held_before"] = held_before
         record["held_after"] = {item: str(tag) for item, tag in self.held.items()}
         record = self._trace_value(record)
@@ -2550,10 +2569,16 @@ class SafeSkillAPI:
                 record["artifact_error"] = str(exc)
         if record["decision"] == "interrupt":
             report_data = record["report"]
+            stage_check = record.get("stage_check")
+            message = f"Visual stage feedback at {stage}: {report_data.get('failure_type') or 'unknown'}."
+            if record.get("decision_source") == "simulator_pose":
+                message = (f"Simulator lift postcondition failed: object rose {stage_check['lift_m']:.4f} m; "
+                           f"minimum is {stage_check['minimum_lift_m']:.2f} m.")
             raise ProgramExecutionError(
                 trace["api"],
-                f"Visual stage feedback at {stage}: {report_data.get('failure_type') or 'unknown'}.",
-                {"stage_feedback": record, "reobserve_before_recovery": True, "last_api_call": trace},
+                message,
+                {"stage_feedback": record, "stage_check": stage_check,
+                 "reobserve_before_recovery": True, "last_api_call": trace},
             )
 
     def _relay_target_arm(

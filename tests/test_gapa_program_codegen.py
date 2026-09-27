@@ -1391,6 +1391,49 @@ class StageMonitorTest(unittest.TestCase):
         self.assertIsNone(api.stage_feedback_provider)
         self.assertEqual(api.stage_feedback, [])
 
+    def test_uncertain_lift_with_real_height_gain_continues(self):
+        provider = self.provider([self.report("uncertain")])
+        api = SafeSkillAPI(FakeEnv(), stage_feedback_provider=provider)
+        api.pick("cup", api.pose("cup"), "left")
+        record, = api.stage_feedback
+        self.assertEqual(record["report"]["status"], "uncertain")
+        self.assertEqual(record["stage_check"]["source"], "simulator_pose")
+        self.assertEqual(record["stage_check"]["status"], "passed")
+        self.assertAlmostEqual(record["stage_check"]["lift_m"], 0.08)
+        self.assertEqual(record["decision"], "continue")
+        self.assertIn("cup", api.held)
+
+    def test_dropped_object_interrupts_from_state_without_rewriting_vlm_report(self):
+        for status in ("uncertain", "ok"):
+            with self.subTest(vlm_status=status):
+                env = FakeEnv()
+                def drop_then_observe(env, event, run_dir=None):
+                    # Simulate release and settling during the completed-lift check.
+                    env.held_actor_by_arm.clear()
+                    env.actors["cup"].pose = FakePose([-0.1, 0.0, 0.759])
+                    return self.report(status)
+                provider = SimpleNamespace(verify_stage=drop_then_observe)
+                failure = execute_program_candidate(ProgramCandidate("p", VALID_SOURCE), env,
+                                                     TaskDSL.place("cup", "plate", "on"), stage_feedback_provider=provider)
+                self.assertEqual(failure.stage, "pick")
+                self.assertIn("Simulator lift postcondition failed", failure.message)
+                record = failure.details["stage_feedback"]
+                self.assertEqual(record["report"]["status"], status)
+                self.assertEqual(record["decision_source"], "simulator_pose")
+                self.assertEqual(record["stage_check"]["status"], "failed")
+                self.assertAlmostEqual(record["stage_check"]["lift_m"], -0.001)
+                self.assertNotIn("cup", failure.details["last_api_call"]["held_after"])
+                self.assertFalse(any(call[0] == "place_actor" for call in env.calls))
+
+    def test_unavailable_lift_state_is_not_marked_passed(self):
+        api = SafeSkillAPI(FakeEnv(), stage_feedback_provider=self.provider([self.report("uncertain")]))
+        trace = api._begin_api_trace("pick", {"name": "cup"})
+        api._verify_stage_feedback(trace, "after_lift", "cup", ArmTag("left"))
+        record, = api.stage_feedback
+        self.assertEqual(record["stage_check"]["status"], "unavailable")
+        self.assertEqual(record["report"]["status"], "uncertain")
+        self.assertEqual(record["decision"], "continue")
+
     def test_early_stage_failure_clears_previous_terminal_check(self):
         env = FakeEnv()
         env.gapa_last_success_details = {"success": True, "mode": "previous_attempt"}

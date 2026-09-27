@@ -23,6 +23,24 @@ class FakeFeedbackVLMClient:
 
 
 class FeedbackProviderTest(unittest.TestCase):
+    def test_conflicting_lift_views_are_uncertain_and_raw_reports_are_preserved(self):
+        responses = [
+            {"status": "failed", "failure_type": "object_slipped", "confidence": 0.95},
+            {"status": "uncertain", "confidence": 0.1},
+            {"status": "ok", "failure_type": "none", "confidence": 0.95},
+        ]
+        provider = VLMFeedbackProvider(client=FakeFeedbackVLMClient([json.dumps(item) for item in responses]))
+        event = StageEvent(1, "p", "after_lift", "pick", 1, object_name="cup", arm="right")
+        frame = {"image": np.zeros((32, 48, 3), dtype=np.uint8)}
+        with patch("gapa.perception.feedback.capture_camera_frame", return_value=frame):
+            report = provider.verify_stage(object(), event)
+        self.assertEqual(report.status, "uncertain")
+        self.assertIsNone(report.failed_stage)
+        self.assertIsNone(report.best_camera)
+        self.assertEqual([item["status"] for item in report.camera_reports], ["failed", "uncertain", "ok"])
+        self.assertEqual(report.camera_reports[0]["confidence"], 0.95)
+        self.assertEqual(report.camera_reports[2]["confidence"], 0.95)
+
     def test_low_confidence_failure_does_not_override_confident_success(self):
         event = StageEvent(1, "p", "after_lift", "pick", 1)
         chosen = _choose_feedback_report([

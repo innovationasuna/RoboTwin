@@ -303,6 +303,20 @@ def _choose_feedback_report(reports: list[dict[str, Any]], event: StageEvent) ->
     # 功能：处理内部辅助逻辑 choose feedback report，把重复的边界检查、状态整理或转换流程集中在一处。
     # 参数：reports：reports 输入，类型约束为 list[dict[str, Any]]；event：阶段事件记录，描述一次动作前后的对象和上下文。
     # 返回：返回 dict[str, Any] 类型结果；调用方依赖该结构继续执行或生成诊断输出。
+    if event.stage == "after_lift":
+        confident_ok = any(_normalize_status(item.get("status")) == "ok"
+                           and float(item.get("confidence", 0.0)) >= STAGE_OK_CONFIDENCE for item in reports)
+        confident_failed = any(_normalize_status(item.get("status")) == "failed"
+                               and float(item.get("confidence", 0.0)) >= STAGE_FAILURE_CONFIDENCE for item in reports)
+        if confident_ok and confident_failed:
+            # Neither camera wins a disagreement about a lifted object. Preserve
+            # all per-camera reports for diagnosis; do not manufacture consensus.
+            return {
+                "status": "uncertain", "failure_type": "unknown", "confidence": 0.0,
+                "camera_name": None, "bbox": None, "llm_feedback": None,
+                "evidence": ["High-confidence camera views disagree about the lifted object."],
+                "suggested_action": "perception_reestimate",
+            }
     active_wrist = _active_wrist_camera(event)
     if event.stage in {"after_grasp", "after_lift", "after_place"} and active_wrist is not None:
         wrist_report = _find_camera_report(reports, active_wrist)

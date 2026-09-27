@@ -411,7 +411,7 @@ HTML = """<!doctype html>
       </div>
       <button id="randomize">生成随机场景</button>
       <div class="control-group"><label for="perception-mode">感知模式</label><select id="perception-mode"><option value="oracle" selected>Oracle</option><option value="vlm">VLM</option></select></div>
-      <div class="control-group"><label for="stage-feedback">阶段视觉检查（实验）</label><select id="stage-feedback"><option value="off" selected>关闭</option><option value="on">开启：抬起 / 放置后检查</option></select></div>
+      <div class="control-group"><label for="stage-feedback">阶段反馈检查（实验）</label><select id="stage-feedback"><option value="off" selected>关闭</option><option value="on">开启：抬起 / 放置后检查</option></select></div>
       <div class="control-group"><label for="instruction">任务</label><textarea id="instruction">put cup on plate</textarea></div>
       <button id="run">执行任务</button>
       <div id="status" class="status" aria-live="polite">Ready.</div>
