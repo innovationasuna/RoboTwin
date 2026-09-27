@@ -8,12 +8,12 @@ GAPA is an experimental program-generation layer built on **RoboTwin 2.0**. Task
 
 ## See it run
 
-| Recovering a cup-placement task | Ordered block stacking |
+| Controlled drop and Agent recovery | Ordered block stacking |
 | :---: | :---: |
-| ![Cup placement with recovery](assets/demos/cup-recovery.gif) | ![Ordered block stacking](assets/demos/stack.gif) |
-| A failed attempt is diagnosed before execution continues in the same scene. | A natural-language instruction becomes a sequence of robot skills. |
+| ![Controlled drop and Agent recovery](assets/demos/drop-recovery.gif) | ![Ordered block stacking](assets/demos/stack.gif) |
+| Injected gripper release makes the cup fall; the Agent reobserves, adjusts its grasp, and succeeds in the same scene. | A natural-language instruction becomes a sequence of robot skills. |
 
-These are historical development demonstrations, not a benchmark or evidence of the new experimental features. See [record provenance and evaluation status](docs/experiments.md).
+Left: a new controlled-fault trial with stage checks and Agent-generated recovery. Right: a historical stacking demo. Neither is a benchmark. See [record provenance and evaluation status](docs/experiments.md).
 
 ## What the system does
 

@@ -39,27 +39,50 @@ The inspected development archive contains **19 runs: 15 recorded successes and 
 
 已检查的开发记录包含 **19 次运行，其中 15 次记录为成功、4 次记录为失败**。这些记录来自开发过程，任务或配置并不统一，不能将其比例作为基准成功率；它们也早于本次新增实验功能。
 
-Two records demonstrate a failed attempt followed by success in the same scene:
+The historical cup run `20260615_131247_d2730f8c` records a
+`relay_place_failed` executor error, but its video does not establish an actual
+failed manipulation. It has been removed as a recovery demonstration. The row
+arrangement record also starts with a perception error, so it is not presented
+as a visible physical failure either. Log errors alone are insufficient evidence
+of a failed physical action.
 
-| Case / 案例 | Scene seed / 场景种子 | Established by the record / 记录能说明的事实 |
-| --- | --- | --- |
-| Cup placement / 杯子放置 | `2` | A later attempt succeeded after an earlier failure / 前次尝试失败后，后续尝试成功 |
-| Block row arrangement / 积木排列 | `1` | A later attempt succeeded after an earlier failure / 前次尝试失败后，后续尝试成功 |
-
-These examples demonstrate recovery paths in individual development cases. They do not isolate the causal benefit of diagnosis, visual feedback, or memory.
-
-这些案例说明开发过程中存在失败恢复的实例，不能单独归因于诊断、视觉反馈或记忆中的某一模块。
+旧杯子案例有执行器报错，但视频不足以证明操作实际失败，因此撤下其“失败恢复”展示。
+积木排列案例的首次错误来自感知，也不作为明显物理失败的替代例子。
 
 ### Homepage demonstrations / 首页演示
 
 | Asset / 资产 | Purpose / 用途 | Evidence status / 证据状态 |
 | --- | --- | --- |
-| [`cup-recovery.gif`](../assets/demos/cup-recovery.gif) | Show failure followed by recovery / 展示失败后恢复 | Historical development demonstration / 历史开发演示 |
+| [`drop-recovery.gif`](../assets/demos/drop-recovery.gif) | Physical drop, diagnosis and Agent retry / 实际掉落、诊断与 Agent 重试 | Controlled fault, 2026-09-28 / 受控扰动 |
 | [`stack.gif`](../assets/demos/stack.gif) | Show ordered skill execution / 展示有序技能执行 | Historical development demonstration / 历史开发演示 |
 
-Source run IDs, perception modes, playback speed, and success details are recorded in the [demo provenance](../assets/demos/README.md). Both previews preserve the chronological sequence of their source video, including the failed cup-placement attempt; playback is accelerated. A clip is an illustration, not an additional evaluation trial.
+Source run IDs, perception modes, playback speed, and success details are recorded in the [demo provenance](../assets/demos/README.md). Both previews preserve source chronology. A clip is an illustration, not an additional evaluation trial.
 
-原始运行 ID、感知模式、播放速度与成功判定明细见[演示来源](../assets/demos/README.md)。两个预览均保留原视频的时间顺序，杯子演示包含失败尝试，并使用加速播放。演示片段不额外计入评测次数。
+### New recovery demonstration / 新恢复案例（2026-09-28）
+
+A one-shot physical gripper release after a successful lift caused an observed
+**8.14 cm drop**. Multi-view VLM reports disagreed; the simulator-height stage
+check interrupted execution **before `place` was called**. FeedbackAgent identified
+loss of grasp and proposed reobserving the current pose and adjusting the grasp.
+CodegenAgent generated a new program (`pre_grasp_dis`: 0.09 → 0.06 m;
+`grasp_dis`: 0 → 0.02 m). In the same unchanged environment, its next attempt
+picked up the cup and placed it on the plate; the native final check passed.
+
+本次扰动由脚本在抬起后主动松开夹爪施加；杯子真实掉落后，阶段检查中断，诊断 Agent
+给出重新观测与调整抓取的建议，代码生成 Agent 生成重试程序。第二次尝试在同一场景完成任务。
+与 9 月 27 日的手写恢复探针不同，本次两轮程序和诊断均经过实际模型调用。
+这只能证明本次受控扰动下流程跑通，不能证明自然失败恢复率或参数调整的因果收益。
+
+[Portable result with both programs and diagnosis / 两轮程序与诊断结果](results/2026-09-28-agent-drop.json).
+
+```bash
+python script/demo_gapa_drop_recovery.py --repo "$PWD" \
+  --output runs_gapa/agent_drop_demo
+```
+
+The output directory must be new. Keep `manifest.json`, `agent_rounds.json`,
+`attempt*/program.py`, stage reports and `video_segments/attempt_*.mp4` together.
+Localization is Oracle; stage visual reports use the real configured VLM.
 
 ## Controlled drop probe / 受控掉落验证
 
