@@ -5,7 +5,7 @@
 
 GAPA builds on **RoboTwin 2.0** to turn natural-language instructions into executable robot skill programs. **Task parsing, program generation and feedback diagnosis** work together to compose skills, repair failed executions in the current scene, and retrieve task-relevant experience.
 
-![GAPA architecture: three agent roles, execution feedback and strategy memory](assets/files/gapa-overview.svg)
+![GAPA architecture: three agent roles, execution feedback and strategy memory](assets/files/gapa-overview.png)
 
 ## See it in action
 
@@ -32,6 +32,12 @@ A fixed-seed cup-placement check passed with and without the new monitor on an R
 
 Optional VLM checks run at `after_lift` and `after_place`, **not at every control step**. Successful-example memory and visual stage feedback remain experimental; controlled success-rate and latency comparisons are pending. The runtime still uses simulator state and contact information. [Results, limitations and reproduction commands →](docs/experiments.md)
 
+## Web interface
+
+![GAPA frontend with scene configuration, camera views and recorded video](assets/files/gapa-web-ui.png)
+
+The frontend brings scene setup, perception options, task input, camera previews and execution video into one workspace. This screenshot renders the repository's actual frontend with archived diagnostic frames and a recorded recovery video; it is a **read-only preview, not a live simulation run**. Unavailable camera views are explicitly marked. [Screenshot provenance](docs/presentation.md)
+
 ## Try it locally
 
 First install the RoboTwin environment and assets using the preserved [upstream README](README.RoboTwin.md). From the repository root:
@@ -47,7 +53,7 @@ Set your LLM endpoint, model, and key in `gapa/gapa_api.env`. Configure a VLM en
 python -m uvicorn gapa.web.app:app --host 127.0.0.1 --port 7860
 ```
 
-Open **http://127.0.0.1:7860**, choose scene objects and a seed, generate the scene, then enter an instruction. For example, with the corresponding objects selected:
+Open [http://127.0.0.1:7860](http://127.0.0.1:7860), choose scene objects and a seed, generate the scene, then enter an instruction. For example, with the corresponding objects selected:
 
 - “Place the cup on the plate.”
 - “Arrange the red, green, and blue blocks from left to right.”
