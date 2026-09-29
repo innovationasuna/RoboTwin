@@ -33,3 +33,7 @@ Editing conversation: https://chatgpt.com/c/6abb563b-9848-83e8-88a2-4cb411016c0b
 Current README asset: `gapa-pipeline-gripper.png`. All five rendered grippers now use a compact rectangular body and two straight parallel fingers. The figure remains a conceptual illustration.
 
 Editing conversation: https://chatgpt.com/c/6abb5a44-c128-83e8-906a-3500224a31df
+
+## Selected final overview
+
+The README uses `gapa-pipeline-final.png`, the exact image selected and supplied by the user. It removes the Oracle optional caption and uses the revised feedback and memory connectors.
