@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from gapa.perception.feedback import FeedbackError, StageEvent, VLMFeedbackProvider
+from gapa.perception.feedback import FeedbackError, StageEvent, VLMFeedbackProvider, _choose_feedback_report, parse_feedback_response
 
 
 class FakeFeedbackVLMClient:
@@ -23,6 +23,44 @@ class FakeFeedbackVLMClient:
 
 
 class FeedbackProviderTest(unittest.TestCase):
+    def test_conflicting_lift_views_are_uncertain_and_raw_reports_are_preserved(self):
+        responses = [
+            {"status": "failed", "failure_type": "object_slipped", "confidence": 0.95},
+            {"status": "uncertain", "confidence": 0.1},
+            {"status": "ok", "failure_type": "none", "confidence": 0.95},
+        ]
+        provider = VLMFeedbackProvider(client=FakeFeedbackVLMClient([json.dumps(item) for item in responses]))
+        event = StageEvent(1, "p", "after_lift", "pick", 1, object_name="cup", arm="right")
+        frame = {"image": np.zeros((32, 48, 3), dtype=np.uint8)}
+        with patch("gapa.perception.feedback.capture_camera_frame", return_value=frame):
+            report = provider.verify_stage(object(), event)
+        self.assertEqual(report.status, "uncertain")
+        self.assertIsNone(report.failed_stage)
+        self.assertIsNone(report.best_camera)
+        self.assertEqual([item["status"] for item in report.camera_reports], ["failed", "uncertain", "ok"])
+        self.assertEqual(report.camera_reports[0]["confidence"], 0.95)
+        self.assertEqual(report.camera_reports[2]["confidence"], 0.95)
+
+    def test_low_confidence_failure_does_not_override_confident_success(self):
+        event = StageEvent(1, "p", "after_lift", "pick", 1)
+        chosen = _choose_feedback_report([
+            {"status": "failed", "confidence": 0.01, "camera_name": "head_camera"},
+            {"status": "ok", "confidence": 0.99, "camera_name": "left_camera"},
+        ], event)
+        self.assertEqual(chosen["status"], "ok")
+
+    def test_only_weak_reports_are_uncertain(self):
+        event = StageEvent(1, "p", "after_place", "place", 1, arm="left")
+        chosen = _choose_feedback_report([
+            {"status": "failed", "confidence": 0.79, "camera_name": "left_camera"},
+            {"status": "uncertain", "confidence": 0.3, "camera_name": "head_camera"},
+        ], event)
+        self.assertEqual(chosen["status"], "uncertain")
+
+    def test_nonfinite_confidence_is_not_actionable(self):
+        report = parse_feedback_response('{"status":"failed","confidence":NaN}', "after_lift", "head_camera")
+        self.assertEqual(report["confidence"], 0.0)
+
     def test_three_camera_feedback_selects_highest_confidence_failure(self):
         client = FakeFeedbackVLMClient([
             json.dumps({

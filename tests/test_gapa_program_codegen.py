@@ -2,6 +2,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -12,6 +14,7 @@ from gapa.codegen.safety import ProgramSafetyError, validate_program_for_task, v
 from gapa.domain.objects import CABINET_SOURCE_OBJECTS
 from gapa.domain.task import FailureReport, TaskDSL
 from gapa.memory import SuccessMemoryManager, strategy_id_for_task
+from gapa.perception.feedback import VLMFeedbackReport
 from gapa.runtime.api import (
     ArmTag,
     ProgramCandidate,
@@ -1300,6 +1303,169 @@ def play_once(api):
         stage_trace = [item for item in api.api_trace if item["api"] == "runtime_stage_held_source_for_drawer"][0]
         self.assertEqual(stage_trace["status"], "failed")
         self.assertEqual(stage_trace["error"]["stage"], "drawer_held_source_no_safe_slot")
+
+
+class StageMonitorTest(unittest.TestCase):
+    @staticmethod
+    def report(status="ok", confidence=0.95, failure_type="none"):
+        return VLMFeedbackReport(status, None, failure_type, confidence, "left_camera", None,
+                                 ["visual test observation"], None, "none")
+
+    def provider(self, responses):
+        responses = list(responses)
+        events = []
+
+        def verify_stage(env, event, run_dir=None):
+            events.append(event)
+            response = responses.pop(0)
+            if isinstance(response, Exception):
+                raise response
+            return response
+
+        return SimpleNamespace(verify_stage=verify_stage, events=events)
+
+    def test_lift_failure_interrupts_before_place_without_moving_or_releasing(self):
+        env = FakeEnv()
+        provider = self.provider([self.report("failed", failure_type="object_slipped")])
+        with tempfile.TemporaryDirectory() as tmp:
+            failure = execute_program_candidate(
+                ProgramCandidate("p", VALID_SOURCE), env, TaskDSL.place("cup", "plate", "on"),
+                run_dir=tmp, stage_feedback_provider=provider,
+            )
+            records = [json.loads(line) for line in (Path(tmp) / "stage_feedback.jsonl").read_text().splitlines()]
+        self.assertEqual(failure.stage, "pick")
+        self.assertEqual(provider.events[0].stage, "after_lift")
+        self.assertFalse(any(call[0] == "place_actor" for call in env.calls))
+        self.assertFalse(any(call[0] == "open_gripper" for call in env.calls))
+        self.assertNotIn("cup", failure.details["last_api_call"]["held_after"])
+        self.assertIn("cup", records[0]["held_before"])
+        self.assertEqual(records[0]["decision"], "interrupt")
+        feedback = FeedbackAgent(use_llm=False).diagnose(failure, TaskDSL.place("cup", "plate", "on"))
+        self.assertEqual(feedback["visual_stage_feedback"]["report"]["failure_type"], "object_slipped")
+
+    def test_place_failure_keeps_released_scene_state(self):
+        env = FakeEnv()
+        provider = self.provider([self.report(), self.report("failed", failure_type="missed_target")])
+        failure = execute_program_candidate(ProgramCandidate("p", VALID_SOURCE), env,
+                                            TaskDSL.place("cup", "plate", "on"), stage_feedback_provider=provider)
+        self.assertEqual(failure.stage, "place")
+        self.assertEqual([event.stage for event in provider.events], ["after_lift", "after_place"])
+        self.assertEqual(failure.details["last_api_call"]["held_after"], {})
+        self.assertEqual(env.held_actor_by_arm, {})
+        self.assertEqual(failure.details["stage_feedback"]["event"]["target_name"], "plate")
+
+    def test_uncertain_error_and_weak_failure_continue_without_overriding_final_check(self):
+        for response in (self.report("uncertain"), self.report("failed", 0.4), RuntimeError("offline"), self.report()):
+            with self.subTest(response=response):
+                provider = self.provider([response, self.report()])
+                with patch("gapa.runtime.api.SuccessChecker.check", return_value={"success": False}) as check:
+                    failure = execute_program_candidate(ProgramCandidate("p", VALID_SOURCE), FakeEnv(),
+                                                        TaskDSL.place("cup", "plate", "on"), stage_feedback_provider=provider)
+                self.assertEqual(failure.stage, "success_check")
+                check.assert_called_once()
+                self.assertEqual(len(provider.events), 2)
+                self.assertEqual(failure.details["stage_feedback_history"][0]["decision"], "continue")
+
+    def test_special_place_paths_are_monitored_after_release(self):
+        cases = [
+            ("cup", "cup", "offset", TargetPose([0.1, 0, 0.75, 1, 0, 0, 0], kind="offset"), "_place_by_offset"),
+            ("red_block", "green_block", "on", TargetPose([0, 0, 0.8, 1, 0, 0, 0], kind="stack_slot", level=1), "_place_stack_block_by_displacement"),
+            ("playing_cards", "cabinet", "in", TargetPose([0, 0.08, 0.8, 1, 0, 0, 0], kind="object"), "_place_cabinet_source_by_displacement"),
+        ]
+        for name, target, relation, pose, method in cases:
+            with self.subTest(method=method):
+                provider = self.provider([self.report("failed", failure_type="object_slipped")])
+                api = SafeSkillAPI(FakeEnv(), stage_feedback_provider=provider)
+                api.held[name] = ArmTag("left")
+                def release(*args, **kwargs):
+                    api.held.pop(name, None)
+                with patch.object(api, method, side_effect=release):
+                    with self.assertRaises(ProgramExecutionError):
+                        api.place(name, pose, "left", relation, target)
+                self.assertEqual([event.stage for event in provider.events], ["after_place"])
+                self.assertNotIn(name, api.held)
+
+    def test_monitor_is_disabled_by_default(self):
+        api = SafeSkillAPI(FakeEnv())
+        api.pick("cup", api.pose("cup"), "left")
+        self.assertIsNone(api.stage_feedback_provider)
+        self.assertEqual(api.stage_feedback, [])
+
+    def test_uncertain_lift_with_real_height_gain_continues(self):
+        provider = self.provider([self.report("uncertain")])
+        api = SafeSkillAPI(FakeEnv(), stage_feedback_provider=provider)
+        api.pick("cup", api.pose("cup"), "left")
+        record, = api.stage_feedback
+        self.assertEqual(record["report"]["status"], "uncertain")
+        self.assertEqual(record["stage_check"]["source"], "simulator_pose")
+        self.assertEqual(record["stage_check"]["status"], "passed")
+        self.assertAlmostEqual(record["stage_check"]["lift_m"], 0.08)
+        self.assertEqual(record["decision"], "continue")
+        self.assertIn("cup", api.held)
+
+    def test_dropped_object_interrupts_from_state_without_rewriting_vlm_report(self):
+        for status in ("uncertain", "ok"):
+            with self.subTest(vlm_status=status):
+                env = FakeEnv()
+                def drop_then_observe(env, event, run_dir=None):
+                    # Simulate release and settling during the completed-lift check.
+                    env.held_actor_by_arm.clear()
+                    env.actors["cup"].pose = FakePose([-0.1, 0.0, 0.759])
+                    return self.report(status)
+                provider = SimpleNamespace(verify_stage=drop_then_observe)
+                failure = execute_program_candidate(ProgramCandidate("p", VALID_SOURCE), env,
+                                                     TaskDSL.place("cup", "plate", "on"), stage_feedback_provider=provider)
+                self.assertEqual(failure.stage, "pick")
+                self.assertIn("Simulator lift postcondition failed", failure.message)
+                record = failure.details["stage_feedback"]
+                self.assertEqual(record["report"]["status"], status)
+                self.assertEqual(record["decision_source"], "simulator_pose")
+                self.assertEqual(record["stage_check"]["status"], "failed")
+                self.assertAlmostEqual(record["stage_check"]["lift_m"], -0.001)
+                self.assertNotIn("cup", failure.details["last_api_call"]["held_after"])
+                self.assertFalse(any(call[0] == "place_actor" for call in env.calls))
+
+    def test_unavailable_lift_state_is_not_marked_passed(self):
+        api = SafeSkillAPI(FakeEnv(), stage_feedback_provider=self.provider([self.report("uncertain")]))
+        trace = api._begin_api_trace("pick", {"name": "cup"})
+        api._verify_stage_feedback(trace, "after_lift", "cup", ArmTag("left"))
+        record, = api.stage_feedback
+        self.assertEqual(record["stage_check"]["status"], "unavailable")
+        self.assertEqual(record["report"]["status"], "uncertain")
+        self.assertEqual(record["decision"], "continue")
+
+    def test_early_stage_failure_clears_previous_terminal_check(self):
+        env = FakeEnv()
+        env.gapa_last_success_details = {"success": True, "mode": "previous_attempt"}
+        provider = self.provider([self.report("failed", failure_type="object_not_grasped")])
+        failure = execute_program_candidate(ProgramCandidate("p", VALID_SOURCE), env,
+                                            TaskDSL.place("cup", "plate", "on"), stage_feedback_provider=provider)
+        self.assertEqual(failure.stage, "pick")
+        self.assertIsNone(env.gapa_last_success_details)
+
+    def test_unmarked_targets_preserve_metadata_without_false_on_self_failures(self):
+        cases = [
+            ("stack_slot", {"level": 0}, "at_stack_base"),
+            ("row_slot", {"row_index": 1, "row_count": 3}, "at_row_slot"),
+            ("offset", {"dx": 0.05, "dy": 0.0, "dz": 0.0}, "at_offset_target"),
+        ]
+        for kind, metadata, expected_relation in cases:
+            with self.subTest(kind=kind):
+                provider = self.provider([self.report("failed", failure_type="relation_not_satisfied")])
+                api = SafeSkillAPI(FakeEnv(), stage_feedback_provider=provider)
+                pose = TargetPose([0, -0.13, 0.75, 1, 0, 0, 0], kind=kind, **metadata)
+                # This is the completed place event; target_name=self is a legal
+                # placeholder for base/row/offset placement, not on-self geometry.
+                trace = api._begin_api_trace("place", {"target_pose": pose, "target_name": "red_block", "relation": "on"})
+                api._verify_stage_feedback(trace, "after_place", "red_block", ArmTag("left"), "red_block", "on")
+                event, = provider.events
+                self.assertEqual(event.target_kind, kind)
+                self.assertEqual(event.target_metadata, metadata)
+                self.assertEqual(event.target_name, "table")
+                self.assertEqual(event.relation, expected_relation)
+                self.assertEqual(event.args["target_pose"]["kind"], kind)
+                self.assertEqual(api.stage_feedback[0]["decision"], "continue")
+                self.assertEqual(api.stage_feedback[0]["non_actionable_reason"], "unmarked_target_requires_geometric_check")
 
 
 class MemoryAndAgentTest(unittest.TestCase):

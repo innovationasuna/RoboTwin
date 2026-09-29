@@ -120,7 +120,7 @@ class FakeOrchestrator:
     def __init__(self, llm_client, execute, memory, max_rounds):
         self.execute = execute
 
-    def run(self, instruction, task, scene_objects, run_id):
+    def run(self, instruction, task, scene_objects, run_id, scene_context=None):
         rounds = []
         for attempt_id in (1, 2):
             program = ProgramCandidate(f"round_{attempt_id:02d}", PROGRAM_SOURCE)
@@ -168,6 +168,12 @@ class GapaRunnerAttemptEnvTest(unittest.TestCase):
         self.assertGreaterEqual(cleanup.call_count, 2)
 
     def test_attempts_continue_in_same_recovery_env(self):
+        self._check_attempts_continue_in_same_recovery_env(stage_feedback=False)
+
+    def test_stage_feedback_provider_reused_in_same_recovery_env(self):
+        self._check_attempts_continue_in_same_recovery_env(stage_feedback=True)
+
+    def _check_attempts_continue_in_same_recovery_env(self, stage_feedback):
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = GapaRunner(runs_root=Path(tmpdir), memory_root=Path(tmpdir) / "memory")
             original_env = FakeEnv("current")
@@ -213,6 +219,7 @@ class GapaRunnerAttemptEnvTest(unittest.TestCase):
                     "attempt_id": kwargs.get("attempt_id"),
                     "initial_poses": {name: list(pose) for name, pose in initial_poses.items()},
                     "current_cup_pose": list(env.get_actor("cup").get_pose().p),
+                    "stage_feedback_provider": kwargs.get("stage_feedback_provider"),
                 })
                 if kwargs.get("attempt_id") == 1:
                     env.actors["cup"].pose = FakePose([0.21, 0.03, 0.76])
@@ -220,16 +227,25 @@ class GapaRunnerAttemptEnvTest(unittest.TestCase):
                     attempt_id=kwargs.get("attempt_id"),
                     stage="success_check",
                     message="fake failure",
-                    video_path="none",
+                    action="none",
                     details={"program_id": program.program_id, "success_check": {"success": False, "mode": "fake_runner_attempt"}},
                 )
 
             with (
                 patch("gapa.runtime.runner.AgentOrchestrator", FakeOrchestrator),
                 patch("gapa.runtime.runner.execute_program_candidate", fake_execute_program_candidate),
+                patch("gapa.runtime.runner.VLMFeedbackProvider") as monitor_factory,
             ):
-                result = runner.run_task("put cup on plate")
+                result = runner.run_task("put cup on plate", stage_feedback=stage_feedback)
+                if stage_feedback:
+                    monitor_factory.assert_called_once_with()
+                    self.assertTrue(all(call["stage_feedback_provider"] is monitor_factory.return_value for call in execution_calls))
+                else:
+                    monitor_factory.assert_not_called()
+                    self.assertTrue(all(call["stage_feedback_provider"] is None for call in execution_calls))
             scene_record = json.loads((Path(result["run_dir"]) / "scene.json").read_text(encoding="utf-8"))
+            self.assertEqual(scene_record["stage_feedback_enabled"], stage_feedback)
+            self.assertEqual(result["stage_feedback_enabled"], stage_feedback)
 
         self.assertEqual(result["status"], "failed")
         self.assertTrue(original_env.closed)

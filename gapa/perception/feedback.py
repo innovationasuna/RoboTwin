@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -22,6 +23,8 @@ from ..clients.vlm import VLMClient
 
 
 DEFAULT_FEEDBACK_CAMERAS = ("head_camera", "left_camera", "right_camera")
+STAGE_FAILURE_CONFIDENCE = 0.80
+STAGE_OK_CONFIDENCE = 0.65
 
 
 class FeedbackError(RuntimeError):
@@ -42,6 +45,8 @@ class StageEvent:
     args: dict[str, Any] = field(default_factory=dict)
     success_check: dict[str, Any] | None = None
     exception: str | None = None
+    target_kind: str | None = None
+    target_metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         # 功能：将当前对象转换为可序列化的字典，便于日志、接口响应或持久化；该方法属于 StageEvent，会复用该类维护的上下文。。
@@ -225,7 +230,19 @@ Return JSON only, no markdown. Use this exact schema:
 
 For after_grasp, check whether the named object appears controlled by the gripper.
 For after_lift, check whether the named object is lifted and still held.
-For after_place/final_success, check whether the object satisfies the target relation.
+For after_place/final_success with target_kind=object, check the visible target relation.
+The target_kind and target_metadata describe the geometric goal, and take precedence
+over placeholder target_name/relation values in the original API arguments:
+- stack_slot with level=0: this is the bottom block placed on the TABLE, never on itself.
+  Check only visible release and table support, not the completed stack or an exact slot.
+- stack_slot with level>0: check support by target_metadata.support_name (or target_name),
+  not completion of later stack levels.
+- row_slot: check visible release onto the table only. Other row elements may not be
+  placed yet; never judge complete row order or the exact unmarked slot from this image.
+- offset: a single image cannot establish the requested metric displacement. Check
+  visible release only; return uncertain for numerical target-position judgments.
+Do not infer exact world-coordinate errors from an uncalibrated image. A closed drawer
+can hide a correctly placed object; absence of visibility is not evidence of failure.
 If the image cannot show the required evidence, return status "uncertain" with low confidence.
 """.strip()
 
@@ -239,6 +256,8 @@ def parse_feedback_response(raw_response: str, stage: str, camera_name: str) -> 
         raise FeedbackError("VLM feedback response must be a JSON object.")
     status = _normalize_status(data.get("status"))
     confidence = float(data.get("confidence", 0.0))
+    if not math.isfinite(confidence):
+        confidence = 0.0
     if confidence < 0.0 or confidence > 1.0:
         confidence = max(0.0, min(1.0, confidence))
     return {
@@ -284,17 +303,42 @@ def _choose_feedback_report(reports: list[dict[str, Any]], event: StageEvent) ->
     # 功能：处理内部辅助逻辑 choose feedback report，把重复的边界检查、状态整理或转换流程集中在一处。
     # 参数：reports：reports 输入，类型约束为 list[dict[str, Any]]；event：阶段事件记录，描述一次动作前后的对象和上下文。
     # 返回：返回 dict[str, Any] 类型结果；调用方依赖该结构继续执行或生成诊断输出。
+    if event.stage == "after_lift":
+        confident_ok = any(_normalize_status(item.get("status")) == "ok"
+                           and float(item.get("confidence", 0.0)) >= STAGE_OK_CONFIDENCE for item in reports)
+        confident_failed = any(_normalize_status(item.get("status")) == "failed"
+                               and float(item.get("confidence", 0.0)) >= STAGE_FAILURE_CONFIDENCE for item in reports)
+        if confident_ok and confident_failed:
+            # Neither camera wins a disagreement about a lifted object. Preserve
+            # all per-camera reports for diagnosis; do not manufacture consensus.
+            return {
+                "status": "uncertain", "failure_type": "unknown", "confidence": 0.0,
+                "camera_name": None, "bbox": None, "llm_feedback": None,
+                "evidence": ["High-confidence camera views disagree about the lifted object."],
+                "suggested_action": "perception_reestimate",
+            }
     active_wrist = _active_wrist_camera(event)
     if event.stage in {"after_grasp", "after_lift", "after_place"} and active_wrist is not None:
         wrist_report = _find_camera_report(reports, active_wrist)
         if wrist_report is not None:
             status = _normalize_status(wrist_report.get("status"))
             confidence = float(wrist_report.get("confidence", 0.0))
-            if status == "ok" and confidence >= 0.65:
+            if status == "ok" and confidence >= STAGE_OK_CONFIDENCE:
                 return wrist_report
-            if status == "failed" and confidence >= 0.55:
+            if status == "failed" and confidence >= STAGE_FAILURE_CONFIDENCE:
                 return wrist_report
-    return max(reports, key=lambda item: _feedback_rank(item))
+    confident = [
+        report for report in reports
+        if (_normalize_status(report.get("status")) == "failed"
+            and float(report.get("confidence", 0.0)) >= STAGE_FAILURE_CONFIDENCE)
+        or (_normalize_status(report.get("status")) == "ok"
+            and float(report.get("confidence", 0.0)) >= STAGE_OK_CONFIDENCE)
+    ]
+    if confident:
+        return max(confident, key=_feedback_rank)
+    # Weak failure guesses must not suppress a stronger view or stop execution.
+    best = max(reports, key=lambda report: float(report.get("confidence", 0.0)))
+    return {**best, "status": "uncertain", "failed_stage": None, "suggested_action": "none"}
 
 
 def _active_wrist_camera(event: StageEvent) -> str | None:

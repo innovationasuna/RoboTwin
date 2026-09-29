@@ -1,120 +1,76 @@
-# 面向 RoboTwin 的 GAPA 扩展
+<h1 align="center">GAPA</h1>
+<p align="center"><strong>记忆增强与反馈纠错的多智能体机器人程序生成</strong></p>
+<p align="center">自然语言 → 机器人技能 → 执行反馈 → 可复用经验</p>
+<p align="center"><strong>中文</strong> · <a href="README.md">English</a> · <a href="docs/architecture.md">系统架构</a> · <a href="docs/experiments.md">实验记录</a></p>
 
-中文 | [English](README.md)
+GAPA 基于 **RoboTwin 2.0**，将自然语言指令转化为可执行的机器人技能程序。**任务解析、程序生成与反馈诊断**三个 Agent 分工协作，组合技能完成操作，在当前场景中修正失败程序，并检索相关经验辅助后续任务。
 
-这个仓库是在 RoboTwin 2.0 工作区上扩展出的 **GAPA**
-（*Grasp Anything and Put Anywhere*）版本。GAPA 是一个实验性的自然语言到机器人程序层：给定 RoboTwin 场景和自然语言指令后，它会解析任务、生成受限 Python 程序、做确定性安全检查，并通过 oracle 或 VLM 感知路径在仿真环境中执行和重试。
+![GAPA 系统架构：三个 Agent、执行反馈与策略记忆](assets/files/gapa-pipeline-final.png)
 
-原始 RoboTwin README 已保留为
-[`README.RoboTwin.md`](README.RoboTwin.md)。
+*系统概念示意图，机器人场景为插画；下方演示为实际录制。*
 
-![GAPA 流程总览](assets/files/gapa-pipeline-overview.jpg)
+## 运行演示
 
-## 相对原 RoboTwin 的主要改动
+<table>
+<tr><th width="50%">01 · 受控掉落后的诊断恢复</th><th width="50%">02 · 按指定顺序堆叠积木</th></tr>
+<tr><td><img src="assets/demos/drop-recovery.gif" width="100%" alt="杯子受控掉落后，Agent 生成恢复程序并完成放置"></td><td><img src="assets/demos/stack-card.gif" width="100%" alt="机器人按要求堆叠彩色积木"></td></tr>
+<tr><td>人为松开夹爪使杯子掉落；Agent 重新观测、调整抓取，在不重置场景的情况下完成放置。</td><td>将自然语言要求转化为有序的抓取与放置技能调用，完成积木堆叠。</td></tr>
+</table>
 
-### 新增 GAPA 模块
+*左侧为实录的受控扰动试验，右侧为历史堆叠演示；用于展示行为，不代表基准成功率。[演示来源 →](assets/demos/README.md)*
 
-- 新增 [`gapa/`](gapa/) 包，包含任务解析、LLM 代码生成、确定性安全检查、失败反馈重试、可切换的 VLM/oracle 感知辅助、运行产物生成和单用户 FastAPI Web UI。
-- 新增受限运行时 API：[`gapa/runtime/api.py`](gapa/runtime/api.py)。生成程序只通过 `api.pick`、`api.place`、`api.open_drawer`、`api.pose`、`api.target_pose` 等接口操作环境，不直接访问 RoboTwin 底层细节。
-- 新增标准化 TaskDSL：[`gapa/domain/task.py`](gapa/domain/task.py)，并通过 [`gapa/planning/validation.py`](gapa/planning/validation.py) 做任务硬门控。
-- 新增策略级成功记忆：[`gapa/memory/`](gapa/memory/)。
+## 核心机制
 
-### 新增 GAPA RoboTwin 环境
+| 组成 | 作用 |
+| :--- | :--- |
+| **三个 Agent 协作** | 分别负责目标解析、技能程序生成与失败诊断。 |
+| **感知与技能库** | 组合抓取、放置、移动及抽屉操作技能；支持的定位查询可使用 Oracle 状态或 VLM 与深度信息。 |
+| **执行反馈纠错** | 先在支持的技能内部调整参数；局部恢复不足时，诊断失败并重新生成程序，在当前场景继续执行。 |
+| **按任务检索记忆** | 检索策略模板；实验性扩展可保存成功程序，并复用兼容的技能参数作为参考。 |
 
-- 新增 [`envs/gapa_scene.py`](envs/gapa_scene.py)，作为 GAPA 使用的固定物体池 RoboTwin 任务环境。
-- 新增 [`task_config/gapa_scene.yml`](task_config/gapa_scene.yml)，用于 GAPA 场景初始化。
-- 将 RoboTwin 官方 cluttered-table 资产接入 GAPA 场景，并补充柜子/抽屉任务的布局约束。
-- 为 GAPA 支持的任务族新增确定性成功判定细节。
+## 前端界面
 
-### 新增 Web 和运行产物
-
-- 新增 [`gapa/web/app.py`](gapa/web/app.py)，提供本地 FastAPI 前端，用于场景随机化、LLM/VLM 连通性测试、任务执行、预览图和视频展示。
-- 新增 `runs_gapa/` 运行产物目录，保存 JSON/JSONL trace、生成程序、失败反馈、场景预览和修正视频。
+![GAPA 前端：场景配置、多视角预览与执行视频](assets/files/gapa-web-ui.png)
 
 
-## 仓库结构
+## 本地运行
 
-```text
-.
-├── README.md                 # GAPA 英文入口
-├── README.zh-CN.md           # GAPA 中文入口
-├── README.RoboTwin.md        # 原始 RoboTwin README，已保留
-├── envs/gapa_scene.py        # GAPA RoboTwin 场景
-├── task_config/gapa_scene.yml
-├── gapa/
-│   ├── agents/               # 任务解析、代码生成、安全检查、反馈、编排
-│   ├── clients/              # OpenAI-compatible LLM/VLM 客户端
-│   ├── codegen/              # Prompt 构造和 AST 安全检查
-│   ├── config/               # gapa_api.env 读取
-│   ├── domain/               # 物体、TaskDSL、API 规格
-│   ├── media/                # 视频和卡片生成
-│   ├── memory/               # 策略记忆
-│   ├── perception/           # VLM/oracle 感知辅助
-│   ├── planning/             # 任务 planner facade 和 validator
-│   ├── runtime/              # SafeSkillAPI、runner、成功判定
-│   └── web/                  # FastAPI 应用
-└── runs_gapa/                # 本地生成的运行产物
-```
-
-## 快速开始
-
-先按照 [`README.RoboTwin.md`](README.RoboTwin.md) 和 RoboTwin 上游文档安装 RoboTwin 主环境。然后安装 GAPA 的轻量依赖：
+先按照保留的 [RoboTwin 原始说明](README.RoboTwin.md) 安装仿真环境和资产，然后在仓库根目录运行：
 
 ```bash
 pip install -r gapa/requirements.txt
-```
-
-配置 LLM/VLM ：
-
-```bash
 cp gapa/gapa_api.env.example gapa/gapa_api.env
 ```
 
-编辑 `gapa/gapa_api.env`。
-
-从仓库根目录启动 Web UI：
+在 `gapa/gapa_api.env` 中填写 LLM 的服务地址、模型和密钥。使用视觉定位或实验性视觉反馈时，还需配置 VLM。随后启动本地界面：
 
 ```bash
 python -m uvicorn gapa.web.app:app --host 127.0.0.1 --port 7860
 ```
 
-打开：
+打开 [http://127.0.0.1:7860](http://127.0.0.1:7860)，选择场景物体和种子、生成场景，再输入任务。例如，在选好对应物体后：
 
-```text
-http://127.0.0.1:7860
+- “把杯子放到盘子上。”
+- “把红、绿、蓝积木从左到右排列。”
+- “将积木按红色在底部、绿色在中间、蓝色在顶部的顺序堆叠。”
+- “把扑克牌放入柜子。”
+
+界面可以查看生成程序、执行轨迹、场景图像、诊断反馈和视频，运行产物保存在 `runs_gapa/`。
+
+也可以启动一次输出目录与记忆隔离的杯子放置试验：
+
+```bash
+python -m gapa.evaluate --case cup --seed 2 --perception oracle \
+  --output runs_gapa/showcase/baseline
 ```
 
-典型流程：
+添加 `--stage-feedback` 可开启实验性视觉检查，每次运行需使用**新的输出目录**。单次试验最多进行三轮程序生成；设置和结果解释见[实验记录](docs/experiments.md)。
 
-1. 选择 GAPA 物体。
-2. 选择干净桌面或杂乱桌面。
-3. 生成场景。
-4. 输入自然语言任务。
-5. 运行生成程序，并查看 trace / 视频产物。
+## 支持任务
 
-## 支持范围
+目前覆盖支持物体的放置、特定物体入柜、两个或三个积木的排列与堆叠、小距离相对移动，以及支持任务的顺序组合。不支持的指令会在程序生成前被拦截。
 
-GAPA 当前只支持以下任务：
 
-- 将 `cup`、`bowl` 或 RGB block 放到支持的目标上；
-- 将 `playing_cards`、`mouse`、`rubiks_cube` 或 `phone` 放入 `cabinet`；
-- 将两个或三个 RGB block 排成一行；
-- 将两个或三个 RGB block 堆叠；
-- 将可抓取物体按小距离做相对移动；
-- 按顺序组合多个已支持的原子任务。
+## 基于 RoboTwin
 
-不支持的任务会停在 `task_validation` 阶段，不进入代码生成。
-
-## 主要实现入口
-
-| 模块 | 文件 |
-| --- | --- |
-| Web 路由 | [`gapa/web/app.py`](gapa/web/app.py) |
-| Run 生命周期和场景缓存 | [`gapa/runtime/runner.py`](gapa/runtime/runner.py) |
-| 生成程序 API | [`gapa/runtime/api.py`](gapa/runtime/api.py), [`gapa/domain/api_spec.py`](gapa/domain/api_spec.py) |
-| GAPA 场景 | [`envs/gapa_scene.py`](envs/gapa_scene.py), [`task_config/gapa_scene.yml`](task_config/gapa_scene.yml) |
-| 任务模型和验证 | [`gapa/domain/task.py`](gapa/domain/task.py), [`gapa/planning/validation.py`](gapa/planning/validation.py) |
-| 物体注册表 | [`gapa/domain/objects.py`](gapa/domain/objects.py) |
-| 代码生成和安全检查 | [`gapa/codegen/generator.py`](gapa/codegen/generator.py), [`gapa/codegen/safety.py`](gapa/codegen/safety.py) |
-| 感知 | [`gapa/perception/providers.py`](gapa/perception/providers.py) |
-| 视频和报告 | [`gapa/media/video_builder.py`](gapa/media/video_builder.py) |
+本项目在 [RoboTwin](https://github.com/RoboTwin-Platform/RoboTwin) 上新增 GAPA 程序生成与执行层。仿真器、机器人资产及底层控制基础设施来自上游项目；原始文档和引用信息保留在 [README.RoboTwin.md](README.RoboTwin.md)，许可证见 [LICENSE](LICENSE)。

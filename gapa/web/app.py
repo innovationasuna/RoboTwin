@@ -21,6 +21,7 @@ class RandomizeRequest(BaseModel):
 class RunTaskRequest(BaseModel):
     instruction: str
     perception_mode: str = "oracle"
+    stage_feedback: bool = False
 
 
 app = FastAPI(title="GAPA")
@@ -98,7 +99,8 @@ def run_task(request: RunTaskRequest):
     if not instruction:
         raise HTTPException(status_code=400, detail="instruction is required")
     try:
-        return RUNNER.run_task(instruction, perception_mode=request.perception_mode)
+        return RUNNER.run_task(instruction, perception_mode=request.perception_mode,
+                               stage_feedback=request.stage_feedback)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except GapaEnvironmentError as exc:
@@ -409,6 +411,7 @@ HTML = """<!doctype html>
       </div>
       <button id="randomize">生成随机场景</button>
       <div class="control-group"><label for="perception-mode">感知模式</label><select id="perception-mode"><option value="oracle" selected>Oracle</option><option value="vlm">VLM</option></select></div>
+      <div class="control-group"><label for="stage-feedback">阶段反馈检查（实验）</label><select id="stage-feedback"><option value="off" selected>关闭</option><option value="on">开启：抬起 / 放置后检查</option></select></div>
       <div class="control-group"><label for="instruction">任务</label><textarea id="instruction">put cup on plate</textarea></div>
       <button id="run">执行任务</button>
       <div id="status" class="status" aria-live="polite">Ready.</div>
@@ -722,7 +725,8 @@ HTML = """<!doctype html>
         startProgress('video', '视频生成');
         const data = await postJson('/api/task/run', {
           instruction: document.getElementById('instruction').value,
-          perception_mode: document.getElementById('perception-mode').value
+          perception_mode: document.getElementById('perception-mode').value,
+          stage_feedback: document.getElementById('stage-feedback').value === 'on'
         });
         if (data.preview_images) renderPreview(data.preview_images);
         if (data.video) videoEl.src = data.video + '?t=' + Date.now();

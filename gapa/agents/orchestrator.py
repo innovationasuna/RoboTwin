@@ -138,7 +138,17 @@ class AgentOrchestrator:
             elif env is not None:
                 failure = execute_program_candidate(program, env, task, attempt_id=round_index)
             else:
-                failure = None
+                # A safety-approved program is still only a generated artifact.
+                # Preserve it in rounds/all_candidates, but never certify it or
+                # feed it into verified memory without an execution backend.
+                round_result.execution = {
+                    "status": "skipped",
+                    "stage": "execution",
+                    "message": "No execution callback or environment was supplied.",
+                }
+                result.status = "not_executed"
+                result.selection_reason = "execution_not_configured"
+                return result
 
             if failure is None:
                 round_result.execution = {"status": "success"}

@@ -1,0 +1,103 @@
+{
+  "date": "2026-09-28",
+  "run": "showcase20260928/agent-drop",
+  "seed": 2,
+  "task": {
+    "task_type": "atomic",
+    "intent": "place",
+    "object_name": "cup",
+    "target_name": "plate",
+    "relation": "on"
+  },
+  "perception": "oracle",
+  "vlm_model": "qwen-vl-max",
+  "fault": "controlled physical gripper release after lift",
+  "drop_m": 0.08142411708831787,
+  "same_environment": true,
+  "reset_or_teleport": false,
+  "verdict": "observed_drop_agent_recovered",
+  "first_place_reached": false,
+  "visual_status": "uncertain",
+  "interrupt_source": "simulator_pose",
+  "stage_check": {
+    "source": "simulator_pose",
+    "stage": "after_lift",
+    "minimum_lift_m": 0.03,
+    "status": "failed",
+    "before_z": 0.7409999966621399,
+    "current_z": 0.7399866580963135,
+    "lift_m": -0.001013338565826416
+  },
+  "diagnosis": "Pick failed because the cup was not lifted after the grasp.",
+  "suggested_recovery": "Reobserve the current cup pose with api.pose('cup'), then retry picking the cup using that current pose with a smaller pre_grasp_dis than 0.09 and a larger grasp_dis than 0.0 before placing it on the plate.",
+  "feedback_source": "deterministic+llm",
+  "attempts": [
+    {
+      "attempt": 1,
+      "success_check": {
+        "success": false,
+        "mode": "container_plate",
+        "object_name": "cup",
+        "target_name": "plate",
+        "object_pose": [
+          0.16786471009254456,
+          0.02648637630045414,
+          0.7399866580963135
+        ],
+        "target_pose": [
+          -0.03730763494968414,
+          -0.11894331127405167,
+          0.7409999966621399
+        ],
+        "delta": [
+          0.2051723450422287,
+          0.14542968571186066,
+          0.001013338565826416
+        ],
+        "delta_limit": [
+          0.05,
+          0.05,
+          0.03
+        ],
+        "pose_ok": false,
+        "left_gripper_open": true,
+        "right_gripper_open": true
+      },
+      "program": "def play_once(api):\n    cup_pose = api.pose(\"cup\")\n    target_pose = api.target_pose(kind=\"object\", target_name=\"plate\", relation=\"on\")\n    arm = api.choose_arm(cup_pose)\n    api.pick(\"cup\", cup_pose, arm, pre_grasp_dis=0.09, grasp_dis=0.0)\n    api.place(\"cup\", target_pose, arm, relation=\"on\", target_name=\"plate\", pre_dis=0.08, dis=0.02)\n"
+    },
+    {
+      "attempt": 2,
+      "success_check": {
+        "success": true,
+        "mode": "container_plate",
+        "object_name": "cup",
+        "target_name": "plate",
+        "object_pose": [
+          -0.029674097895622253,
+          -0.11848659813404083,
+          0.7479420304298401
+        ],
+        "target_pose": [
+          -0.03730763494968414,
+          -0.11894331127405167,
+          0.7409999966621399
+        ],
+        "delta": [
+          0.00763353705406189,
+          0.00045671314001083374,
+          0.006942033767700195
+        ],
+        "delta_limit": [
+          0.05,
+          0.05,
+          0.03
+        ],
+        "pose_ok": true,
+        "left_gripper_open": true,
+        "right_gripper_open": true
+      },
+      "program": "def play_once(api):\n    source_pose = api.pose('cup')\n    arm = api.choose_arm(source_pose)\n    target_pose = api.target_pose(kind='object', target_name='plate', relation='on')\n    api.pick(name='cup', source_pose=source_pose, arm=arm, pre_grasp_dis=0.06, grasp_dis=0.02)\n    api.place(name='cup', target_pose=target_pose, arm=arm, relation='on', target_name='plate', pre_dis=0.08, dis=0.02)\n"
+    }
+  ],
+  "scope": "Single controlled fault demonstration; not a benchmark or proof that parameter changes caused success."
+}

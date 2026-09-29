@@ -50,6 +50,11 @@ class FeedbackAgent:
                 ],
             },
         }
+        visual_feedback = failure.details.get("stage_feedback")
+        if isinstance(visual_feedback, dict):
+            # Keep the observation distinct from deterministic task checks. It
+            # reaches both the diagnostic LLM and the next code generation pass.
+            feedback["visual_stage_feedback"] = visual_feedback
         return self._attach_llm_feedback(feedback, failure, task, candidate_source)
 
     def _attach_llm_feedback(
@@ -397,6 +402,16 @@ Input:
         # 参数：self：当前类实例，提供内部状态和依赖对象；failure：失败报告对象，包含阶段、原因和上下文信息；success_check：success check 输入，类型约束为 dict[str, Any]；api_trace：API trace 输入，类型约束为 list[dict[str, Any]]；recovery_context：recovery context 输入，类型约束为 dict[str, Any]。
         # 返回：返回 list[str] 类型结果；调用方依赖该结构继续执行或生成诊断输出。
         evidence = [f"stage={failure.stage}", failure.message]
+        visual_feedback = failure.details.get("stage_feedback")
+        if isinstance(visual_feedback, dict):
+            report = visual_feedback.get("report") or {}
+            evidence.append("visual_stage_feedback=" + json.dumps({
+                "stage": (visual_feedback.get("event") or {}).get("stage"),
+                "status": report.get("status"),
+                "failure_type": report.get("failure_type"),
+                "confidence": report.get("confidence"),
+                "evidence": report.get("evidence"),
+            }, ensure_ascii=False))
         if success_check:
             mode = success_check.get("mode")
             if mode:

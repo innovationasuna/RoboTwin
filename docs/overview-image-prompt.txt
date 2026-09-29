@@ -1,0 +1,18 @@
+Edit the provided original GAPA README architecture image, preserving its recognizable academic robotics illustration style, broad landscape composition, realistic illustrated dual-arm tabletop scene, drawer/cup/colored blocks, and small visual task callouts. User explicitly wants THIS original image improved, with substantially less text and MORE meaningful graphics, not a simple box flowchart or a text-heavy infographic.
+
+Make a polished publication-style overview at high resolution, landscape ~1.9:1. White background, restrained navy blue, purple, orange, green accents, thin clean outlines, consistent crisp typography, generous separation and precise non-overlapping arrows. Keep a large dual-arm tabletop simulation illustration occupying the central lower half, and four small image callouts for drawer handle, drawer opening, object localization, and pick/place. These are conceptual illustrations, not claimed recorded measurements.
+
+Across the upper part, use five compact visually-rich modules, with ONLY short headings:
+1 "Instruction": person / speech bubble icon, short quote "Put the cup on the plate."
+2 "Task Parser": single agent icon feeding a small semantic tree; only tiny labels "cup", "plate", "on". 
+3 "Program Generator": single agent icon, code sheet with a few colored code lines, memory-context icon; no paragraphs. 
+4 "Skill Library": six clear icons with short labels "locate", "move", "pick", "place", "open drawer", "check". Validation shown as a small shield, NOT as an agent.
+5 "RoboTwin Simulation": small dual-arm scene thumbnail. 
+Use left-to-right solid arrows across these five modules.
+Below/around the central scene, prominently show a sixth module titled "Feedback Agent", using an agent icon with camera + error-report input and a wrench/code-repair output, with a clear return arrow to "Program Generator" labelled "Repair in current scene". This is the THIRD agent: exactly three agent-role icons total (Task Parser, Program Generator, Feedback Agent), not six agents.
+A separate green "Strategy Memory" cylinder with small success-example cards: a "Verified success" arrow from simulation into memory, and a distinct "Retrieve" arrow FROM memory TO Program Generator. Do not draw a generic memory self-improvement loop.
+Near scene images show "VLM + depth" with camera, 2D bounding box and 3D point glyphs; short caption "Oracle optional". At the bottom a concise visual sequence of icons labelled "Observe", "Check", "Diagnose", "Retry", with a small label "Stage feedback". No invented performance numbers, no 'continuous' monitoring claim, no neural training or self-evolution imagery.
+Title small at top "GAPA" and subtitle "Multi-agent robot programming with feedback and memory".
+Aim 70% graphical content, 30% or less words. Reduce text versus original. Preserve original's rich robotic visual impression. All English words must be spelled correctly, all arrows purposeful with clear heads, no clutter, no cropped labels, no duplicated module numbering.
+
+Refinement: change Feedback Agent numbering to 7; connect its program repair path around the scene to Program Generator. Built-in image generation/editing tool used.

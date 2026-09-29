@@ -13,6 +13,7 @@ from typing import Any
 
 from ..domain.objects import CABINET_SOURCE_OBJECTS, COLOR_BLOCK_OBJECTS, OBJECT_SPECS
 from ..perception import OraclePerception
+from ..perception.feedback import StageEvent, STAGE_FAILURE_CONFIDENCE
 
 try:
     from envs.utils import Action, ArmTag
@@ -577,6 +578,7 @@ class SafeSkillAPI:
         program_id: str = "program",
         perception_provider: Any | None = None,
         perception_mode: str = "oracle",
+        stage_feedback_provider: Any | None = None,
     ) -> None:
         # 功能：初始化当前对象，保存运行所需的配置、依赖和内部状态。
         # 参数：self：当前类实例，提供内部状态和依赖对象；env：RoboTwin/GAPA 仿真环境实例，提供场景、机器人和相机访问能力；run_dir：本次运行的产物目录，用于保存日志、视频和诊断文件，默认值为 None；generate_id：generate id 输入，类型约束为 str，默认值为 'current'；attempt_id：attempt id 输入，类型约束为 int，默认值为 1；program_id：program id 输入，类型约束为 str，默认值为 'program'；perception_provider：perception provider 输入，类型约束为 Any | None，默认值为 None；perception_mode：perception mode 输入，类型约束为 str，默认值为 'oracle'。
@@ -588,6 +590,8 @@ class SafeSkillAPI:
         self.program_id = program_id
         self.perception_mode = perception_mode
         self.perception_provider = perception_provider or OraclePerception()
+        self.stage_feedback_provider = stage_feedback_provider
+        self.stage_feedback: list[dict[str, Any]] = []
         self.held: dict[str, ArmTag] = {}
         self.last_gripper: ArmTag | None = None
         self.step_index = 0
@@ -978,6 +982,7 @@ class SafeSkillAPI:
             if not self._is_current_cabinet_source(name):
                 lift = self.env.move(self.env.move_by_displacement(arm_tag=arm_tag, z=0.08, move_axis="world"))
                 self._reset_plan_if_needed(lift)
+                self._verify_stage_feedback(trace, "after_lift", name, arm_tag)
             self._snapshot(f"pick_{name}")
         except Exception as exc:
             self._finish_api_trace(trace, "failed", error=exc, object_names=[name])
@@ -2391,6 +2396,7 @@ class SafeSkillAPI:
             target_kind = getattr(target_pose, "kind", None)
             if target_kind == "offset":
                 self._place_by_offset(name, actor, target_pose, arm_tag)
+                self._verify_stage_feedback(trace, "after_place", name, arm_tag, target_name, relation)
                 self._finish_api_trace(trace, "success", object_names=object_names)
                 return
             if target_kind != "stack_slot" and target_name == "cabinet" and relation == "in" and name in CABINET_SOURCE_OBJECTS:
@@ -2402,6 +2408,7 @@ class SafeSkillAPI:
                     relation=relation,
                     target_name=target_name,
                 )
+                self._verify_stage_feedback(trace, "after_place", name, arm_tag, target_name, relation)
                 self._finish_api_trace(trace, "success", object_names=object_names)
                 return
             if target_kind != "stack_slot" and target_name == "cabinet" and relation == "in":
@@ -2432,6 +2439,7 @@ class SafeSkillAPI:
                 and target_name in COLOR_BLOCK_OBJECTS
             ):
                 self._place_stack_block_by_displacement(name, actor, target_pose, arm_tag, target_name=target_name)
+                self._verify_stage_feedback(trace, "after_place", name, arm_tag, target_name, relation)
                 self._finish_api_trace(trace, "success", object_names=object_names)
                 return
             place_kwargs = self._place_kwargs(
@@ -2462,10 +2470,116 @@ class SafeSkillAPI:
             retreat = self.env.move(self.env.move_by_displacement(arm_tag=arm_tag, z=0.07, move_axis="world"))
             self._reset_plan_if_needed(retreat)
             self._snapshot(f"place_{name}_{target_name}")
+            self._verify_stage_feedback(trace, "after_place", name, arm_tag, target_name, relation)
         except Exception as exc:
             self._finish_api_trace(trace, "failed", error=exc, object_names=object_names)
             raise
         self._finish_api_trace(trace, "success", object_names=object_names)
+
+    def _verify_stage_feedback(
+        self,
+        trace: dict[str, Any],
+        stage: str,
+        name: str,
+        arm: ArmTag,
+        target_name: str | None = None,
+        relation: str | None = None,
+    ) -> None:
+        """Hybrid visual and simulator-state checks at completed skill boundaries.
+
+        The monitor never declares task success or moves/resets the robot. An
+        inconclusive VLM is retained separately from the lift postcondition;
+        unavailable simulator state never counts as a passed state check.
+        """
+        if self.stage_feedback_provider is None:
+            return
+        target = trace["arguments"].get("target_pose")
+        target_kind = target.get("kind") if isinstance(target, dict) else None
+        metadata = target.get("metadata", {}) if isinstance(target, dict) else {}
+        target_metadata = {key: metadata[key] for key in (
+            "level", "support_name", "row_index", "row_count", "dx", "dy", "dz",
+        ) if key in metadata}
+        unmarked_target = target_kind in {"row_slot", "offset"} or (
+            target_kind == "stack_slot" and target_metadata.get("level") == 0
+        )
+        if stage == "after_place" and unmarked_target:
+            target_name = "table"
+            relation = {"row_slot": "at_row_slot", "offset": "at_offset_target", "stack_slot": "at_stack_base"}[target_kind]
+        event = StageEvent(
+            attempt_id=self.attempt_id,
+            program_id=self.program_id,
+            stage=stage,
+            api_call=trace["api"],
+            step_index=trace["index"],
+            object_name=name,
+            target_name=target_name,
+            relation=relation,
+            arm=str(arm),
+            args=trace["arguments"],
+            target_kind=target_kind,
+            target_metadata=target_metadata,
+        )
+        record: dict[str, Any] = {"event": event.to_dict(), "decision": "continue"}
+        held_before = {item: str(tag) for item, tag in self.held.items()}
+        try:
+            report = self.stage_feedback_provider.verify_stage(self.env, event, run_dir=self.run_dir)
+            record["report"] = report.to_dict()
+            confidence = float(report.confidence)
+            if report.status == "failed" and math.isfinite(confidence) and confidence >= STAGE_FAILURE_CONFIDENCE:
+                if unmarked_target and report.failure_type in {"missed_target", "relation_not_satisfied"}:
+                    record["non_actionable_reason"] = "unmarked_target_requires_geometric_check"
+                else:
+                    record["decision"] = "interrupt"
+                    record["decision_source"] = "vlm"
+                if record["decision"] == "interrupt" and stage == "after_lift" and report.failure_type in {"object_not_grasped", "object_slipped"}:
+                    # Invalidate the optimistic bookkeeping, without opening the
+                    # physical gripper or assuming the simulator has reset.
+                    self.held.pop(name, None)
+        except Exception as exc:
+            record["report"] = {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+        if stage == "after_lift":
+            stage_check = {"source": "simulator_pose", "stage": "after_lift", "minimum_lift_m": 0.03}
+            try:
+                before_z = float(trace["objects_before"][name][2])
+                current_z = float(_pose_to_list(self.env.get_actor(name).get_pose())[2])
+                if not math.isfinite(before_z) or not math.isfinite(current_z):
+                    raise ValueError("Non-finite object height.")
+                lifted = current_z - before_z
+                stage_check.update(status="passed" if lifted >= 0.03 else "failed",
+                                   before_z=before_z, current_z=current_z, lift_m=lifted)
+            except Exception as exc:
+                stage_check.update(status="unavailable", error=f"{type(exc).__name__}: {exc}")
+            record["stage_check"] = stage_check
+            if stage_check["status"] == "failed":
+                record["decision"] = "interrupt"
+                record["decision_source"] = "simulator_pose"
+                self.held.pop(name, None)
+        record["held_before"] = held_before
+        record["held_after"] = {item: str(tag) for item, tag in self.held.items()}
+        record = self._trace_value(record)
+        self.stage_feedback.append(record)
+        trace.setdefault("stage_feedback", []).append(record)
+        if self.run_dir:
+            try:
+                path = Path(self.run_dir) / "stage_feedback.jsonl"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+            except OSError as exc:
+                record["artifact_error"] = str(exc)
+        if record["decision"] == "interrupt":
+            report_data = record["report"]
+            stage_check = record.get("stage_check")
+            message = f"Visual stage feedback at {stage}: {report_data.get('failure_type') or 'unknown'}."
+            if record.get("decision_source") == "simulator_pose":
+                message = (f"Simulator lift postcondition failed: object rose {stage_check['lift_m']:.4f} m; "
+                           f"minimum is {stage_check['minimum_lift_m']:.2f} m.")
+            raise ProgramExecutionError(
+                trace["api"],
+                message,
+                {"stage_feedback": record, "stage_check": stage_check,
+                 "reobserve_before_recovery": True, "last_api_call": trace},
+            )
 
     def _relay_target_arm(
         self,
@@ -3494,6 +3608,7 @@ def execute_program_candidate(
     initial_poses: dict[str, list[float]] | None = None,
     perception_provider: Any | None = None,
     perception_mode: str = "oracle",
+    stage_feedback_provider: Any | None = None,
     **_: Any,
 ) -> FailureReport | None:
     # 功能：执行 execute program candidate 相关的业务逻辑，并把结果整理给调用方继续使用。
@@ -3503,6 +3618,9 @@ def execute_program_candidate(
     env.active_task = task
     env.active_plan = None
     env.plan_success = True
+    # An early monitored failure must not inherit the previous round's terminal
+    # success details when the same simulator is reused for recovery.
+    env.gapa_last_success_details = None
     initial = initial_poses or _initial_poses(env, task)
     try:
         env.gapa_task_origin_z_by_object = {name: pose[2] for name, pose in initial.items()}
@@ -3523,6 +3641,7 @@ def execute_program_candidate(
         program_id=candidate.program_id,
         perception_provider=perception_provider,
         perception_mode=perception_mode,
+        stage_feedback_provider=stage_feedback_provider,
     )
 
     def failure_details(extra: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -3536,6 +3655,7 @@ def execute_program_candidate(
         details = {
             "program_id": candidate.program_id,
             "api_trace": list(api.api_trace),
+            "stage_feedback_history": list(api.stage_feedback),
         }
         if api.api_trace:
             details["last_api_call"] = api.api_trace[-1]

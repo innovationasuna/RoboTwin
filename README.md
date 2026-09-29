@@ -1,137 +1,76 @@
-# GAPA for RoboTwin
+<h1 align="center">GAPA</h1>
+<p align="center"><strong>Memory-augmented robot programming with multi-agent feedback</strong></p>
+<p align="center">Natural language → robot skills → execution feedback → reusable experience</p>
+<p align="center"><a href="README.zh-CN.md">中文</a> · <strong>English</strong> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/experiments.md">Experiments</a></p>
 
-[中文](README.zh-CN.md) | English
+GAPA builds on **RoboTwin 2.0** to turn natural-language instructions into executable robot skill programs. **Task parsing, program generation and feedback diagnosis** work together to compose skills, repair failed executions in the current scene, and retrieve task-relevant experience.
 
-This repository is a RoboTwin 2.0 workspace extended with **GAPA**
-(*Grasp Anything and Put Anywhere*). GAPA is an experimental natural-language-to-robot-program
-layer: given a RoboTwin scene and a natural-language instruction, it parses the
-task, generates a restricted Python program, applies deterministic safety
-checks, and executes/retries in simulation through either oracle or VLM
-perception paths.
+![GAPA architecture: three agent roles, execution feedback and strategy memory](assets/files/gapa-pipeline-final.png)
 
-The original RoboTwin README is preserved at
-[`README.RoboTwin.md`](README.RoboTwin.md).
+*Conceptual overview; robot scenes are illustrations. Recorded demonstrations follow below.*
 
-![GAPA pipeline overview](assets/files/gapa-pipeline-overview.jpg)
+## See it in action
 
-## Main Changes From Original RoboTwin
+<table>
+<tr><th width="50%">01 · Recover after a controlled drop</th><th width="50%">02 · Stack in the requested order</th></tr>
+<tr><td><img src="assets/demos/drop-recovery.gif" width="100%" alt="Controlled cup drop followed by agent-generated recovery"></td><td><img src="assets/demos/stack-card.gif" width="100%" alt="Robot stacks colored blocks in the requested order"></td></tr>
+<tr><td>An injected gripper release drops the cup. The Agent reobserves the scene, adjusts the grasp and completes placement without a scene reset.</td><td>A natural-language instruction becomes an ordered sequence of grasping and placement skills.</td></tr>
+</table>
 
-### Added GAPA Module
+*Left: a recorded controlled-fault trial. Right: a historical stacking demo. These illustrate behavior, not benchmark success rates. [Demo provenance →](assets/demos/README.md)*
 
-- Added the [`gapa/`](gapa/) package, including task parsing, LLM code generation,
-  deterministic safety checks, failure-feedback retry, switchable VLM/oracle
-  perception helpers, run artifact generation, and a single-user FastAPI Web UI.
-- Added a restricted runtime API: [`gapa/runtime/api.py`](gapa/runtime/api.py).
-  Generated programs operate through `api.pick`, `api.place`,
-  `api.open_drawer`, `api.pose`, `api.target_pose`, and related interfaces
-  instead of directly accessing RoboTwin internals.
-- Added a canonical TaskDSL in [`gapa/domain/task.py`](gapa/domain/task.py),
-  with a hard task gate in [`gapa/planning/validation.py`](gapa/planning/validation.py).
-- Added strategy-level success memory under [`gapa/memory/`](gapa/memory/).
+## What makes it work
 
-### Added GAPA RoboTwin Environment
+| Component | Role |
+| :--- | :--- |
+| **Three cooperating agents** | Parse goals, generate skill programs and diagnose failures through separate roles. |
+| **Grounded skill library** | Compose grasping, placement, movement and drawer skills; use Oracle state or VLM localization with depth for supported queries. |
+| **Feedback-driven repair** | Adjust parameters inside supported skills, then diagnose and regenerate when local recovery is insufficient. |
+| **Task-relevant memory** | Retrieve strategy templates; optionally archive successful programs and reuse compatible skill-parameter references. |
 
-- Added [`envs/gapa_scene.py`](envs/gapa_scene.py), a fixed-object-pool RoboTwin
-  task environment used by GAPA.
-- Added [`task_config/gapa_scene.yml`](task_config/gapa_scene.yml) for GAPA
-  scene initialization.
-- Integrated RoboTwin official cluttered-table assets into GAPA scenes, with
-  extra layout constraints for cabinet/drawer tasks.
-- Added deterministic success details for supported GAPA task families.
+## Web interface
 
-### Added Web UI and Run Artifacts
+![GAPA frontend with scene configuration, camera views and recorded video](assets/files/gapa-web-ui.png)
 
-- Added [`gapa/web/app.py`](gapa/web/app.py), a local FastAPI frontend for scene
-  randomization, LLM/VLM connectivity tests, task execution, preview images,
-  and video display.
-- Added `runs_gapa/` for generated run artifacts, including JSON/JSONL traces,
-  generated programs, failure feedback, scene previews, and correction videos.
 
-## Repository Structure
+## Try it locally
 
-```text
-.
-├── README.md                 # GAPA English entry point
-├── README.zh-CN.md           # GAPA Chinese entry point
-├── README.RoboTwin.md        # Original RoboTwin README, preserved
-├── envs/gapa_scene.py        # GAPA RoboTwin scene
-├── task_config/gapa_scene.yml
-├── gapa/
-│   ├── agents/               # Task parsing, codegen, safety, feedback, orchestration
-│   ├── clients/              # OpenAI-compatible LLM/VLM clients
-│   ├── codegen/              # Prompt construction and AST safety checks
-│   ├── config/               # gapa_api.env loading
-│   ├── domain/               # Objects, TaskDSL, API spec
-│   ├── media/                # Video and card generation
-│   ├── memory/               # Strategy memory
-│   ├── perception/           # VLM/oracle perception helpers
-│   ├── planning/             # Task planner facade and validator
-│   ├── runtime/              # SafeSkillAPI, runner, success checks
-│   └── web/                  # FastAPI app
-└── runs_gapa/                # Local generated run artifacts
-```
-
-## Quick Start
-
-Install the main RoboTwin environment first by following
-[`README.RoboTwin.md`](README.RoboTwin.md) and the upstream RoboTwin
-documentation. Then install the lightweight GAPA dependencies:
+First install the RoboTwin environment and assets using the preserved [upstream README](README.RoboTwin.md). From the repository root:
 
 ```bash
 pip install -r gapa/requirements.txt
-```
-
-Configure LLM/VLM:
-
-```bash
 cp gapa/gapa_api.env.example gapa/gapa_api.env
 ```
 
-Edit `gapa/gapa_api.env`.
-
-Start the Web UI from the repository root:
+Set your LLM endpoint, model, and key in `gapa/gapa_api.env`. Configure a VLM endpoint as well to use visual localization or experimental visual feedback. Then start the local UI:
 
 ```bash
 python -m uvicorn gapa.web.app:app --host 127.0.0.1 --port 7860
 ```
 
-Open:
+Open [http://127.0.0.1:7860](http://127.0.0.1:7860), choose scene objects and a seed, generate the scene, then enter an instruction. For example, with the corresponding objects selected:
 
-```text
-http://127.0.0.1:7860
+- “Place the cup on the plate.”
+- “Arrange the red, green, and blue blocks from left to right.”
+- “Stack the blocks with red at the bottom, green in the middle, and blue on top.”
+- “Put the playing cards into the cabinet.”
+
+The UI exposes generated programs, traces, scene images, feedback, and videos under `runs_gapa/`.
+
+For an isolated cup-placement run with its own output and memory:
+
+```bash
+python -m gapa.evaluate --case cup --seed 2 --perception oracle \
+  --output runs_gapa/showcase/baseline
 ```
 
-Typical flow:
+Add `--stage-feedback` to enable experimental visual checks, and use a **new output directory** for each run. Each trial allows up to three generation rounds. See [experiment settings and interpretation](docs/experiments.md).
 
-1. Select GAPA objects.
-2. Choose a clean or cluttered table.
-3. Generate a scene.
-4. Enter a natural-language task.
-5. Run the generated program and inspect the trace/video artifacts.
+## Supported tasks
 
-## Supported Scope
+The current task vocabulary covers supported object placement, selected objects placed into a cabinet, two- or three-block rows and stacks, small relative moves, and sequential compositions of supported tasks. Unsupported instructions are rejected before program generation.
 
-GAPA currently supports the following tasks:
 
-- place `cup`, `bowl`, or RGB blocks on supported targets;
-- place `playing_cards`, `mouse`, `rubiks_cube`, or `phone` into `cabinet`;
-- arrange two or three RGB blocks in a row;
-- stack two or three RGB blocks;
-- move a graspable object by a small relative displacement;
-- compose multiple supported atomic tasks in sequence.
+## Built on RoboTwin
 
-Unsupported tasks stop at `task_validation` before code generation.
-
-## Main Implementation Entry Points
-
-| Area | Files |
-| --- | --- |
-| Web routes | [`gapa/web/app.py`](gapa/web/app.py) |
-| Run lifecycle and scene cache | [`gapa/runtime/runner.py`](gapa/runtime/runner.py) |
-| Generated-program API | [`gapa/runtime/api.py`](gapa/runtime/api.py), [`gapa/domain/api_spec.py`](gapa/domain/api_spec.py) |
-| GAPA scene | [`envs/gapa_scene.py`](envs/gapa_scene.py), [`task_config/gapa_scene.yml`](task_config/gapa_scene.yml) |
-| Task model and validation | [`gapa/domain/task.py`](gapa/domain/task.py), [`gapa/planning/validation.py`](gapa/planning/validation.py) |
-| Object registry | [`gapa/domain/objects.py`](gapa/domain/objects.py) |
-| Code generation and safety checks | [`gapa/codegen/generator.py`](gapa/codegen/generator.py), [`gapa/codegen/safety.py`](gapa/codegen/safety.py) |
-| Perception | [`gapa/perception/providers.py`](gapa/perception/providers.py) |
-| Videos and reports | [`gapa/media/video_builder.py`](gapa/media/video_builder.py) |
+This repository extends [RoboTwin](https://github.com/RoboTwin-Platform/RoboTwin) with the GAPA program-generation and execution layer. The simulator, robot assets, and underlying robot-control infrastructure come from the upstream project. Its original documentation and citation information remain in [README.RoboTwin.md](README.RoboTwin.md); see also [LICENSE](LICENSE).

@@ -1,0 +1,67 @@
+{
+  "probe": "controlled physical gripper release",
+  "implementation_commit": "4ff76f0",
+  "seed": 2,
+  "perception": "oracle",
+  "vlm_model": "qwen-vl-max",
+  "injected": true,
+  "verdict": "observed_drop_interrupted",
+  "drop_dz_m": 0.08104228973388672,
+  "agent_generated_recovery": false,
+  "scene_reset": false,
+  "attempts": [
+    {
+      "attempt": 1,
+      "native_success": false,
+      "place_reached": false,
+      "manual_fixed_program": true,
+      "stages": [
+        {
+          "event": "after_lift",
+          "decision": "interrupt",
+          "decision_source": "simulator_pose",
+          "visual_status": "uncertain",
+          "stage_check": {
+            "source": "simulator_pose",
+            "stage": "after_lift",
+            "minimum_lift_m": 0.03,
+            "status": "failed",
+            "before_z": 0.7409999966621399,
+            "current_z": 0.7399866580963135,
+            "lift_m": -0.001013338565826416
+          }
+        }
+      ]
+    },
+    {
+      "attempt": 2,
+      "native_success": true,
+      "place_reached": true,
+      "manual_fixed_program": true,
+      "stages": [
+        {
+          "event": "after_lift",
+          "decision": "continue",
+          "decision_source": null,
+          "visual_status": "uncertain",
+          "stage_check": {
+            "source": "simulator_pose",
+            "stage": "after_lift",
+            "minimum_lift_m": 0.03,
+            "status": "passed",
+            "before_z": 0.7399866580963135,
+            "current_z": 0.8211470246315002,
+            "lift_m": 0.08116036653518677
+          }
+        },
+        {
+          "event": "after_place",
+          "decision": "continue",
+          "decision_source": null,
+          "visual_status": "ok",
+          "stage_check": null
+        }
+      ]
+    }
+  ]
+}

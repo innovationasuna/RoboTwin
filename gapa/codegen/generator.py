@@ -239,7 +239,7 @@ Hard constraints:
 - For atomic place tasks, api.place must use the exact TaskDSL relation and target_name.
 - Assign pose-returning APIs to local variables before passing them into another API call.
 - You may explicitly pass only API-spec tuning keywords and only within the allowed ranges.
-- For every api.pick, api.open_drawer, and api.place call, explicitly pass all tuning keywords. Use the default tuning values above unless Current-run execution diagnosis specifically recommends a different in-range value.
+- For every api.pick, api.open_drawer, and api.place call, explicitly pass all tuning keywords. Prefer current-run execution diagnosis; otherwise use compatible verified tuning references from Strategy Memory when supplied, or the defaults above. All values must remain in range.
 - Strategy memory is generic; never copy object names from memory. Use only the current TaskDSL object names.
 - If no strategy memory is provided, still generate a conservative program from TaskDSL and API spec.
 - For recovery rounds, continue from the current simulator state described in feedback instead of assuming a reset.

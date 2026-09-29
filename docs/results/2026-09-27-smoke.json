@@ -1,0 +1,142 @@
+{
+  "purpose": "Two end-to-end smoke runs, not a benchmark or isolated ablation",
+  "date": "2026-09-27",
+  "limitations": [
+    "Single task and scene seed",
+    "LLM outputs and updated prompts were not held identical",
+    "No initial failures occurred in these two runs; cannot measure recovery benefit",
+    "Memory fresh in each run; parameter reuse verified separately by tests"
+  ],
+  "runs": [
+    {
+      "case": "cup",
+      "seed": 2,
+      "instruction": "把杯子放到盘子里",
+      "objects": [
+        "cup",
+        "plate"
+      ],
+      "perception_mode": "oracle",
+      "stage_feedback": false,
+      "memory": "fresh isolated directory; no cross-case warmup",
+      "llm_model": "deepseek-v4-pro",
+      "vlm_model": "qwen-vl-max",
+      "gpu": "0, NVIDIA GeForce RTX 4060 Laptop GPU",
+      "max_agent_rounds": 3,
+      "status": "success",
+      "run_id": "20260927_223216_1b040814",
+      "attempt_count": 1,
+      "success_check": {
+        "success": true,
+        "mode": "container_plate",
+        "object_name": "cup",
+        "target_name": "plate",
+        "object_pose": [
+          -0.03263237327337265,
+          -0.11662666499614716,
+          0.7479394674301147
+        ],
+        "target_pose": [
+          -0.03730763494968414,
+          -0.11894331127405167,
+          0.7409999966621399
+        ],
+        "delta": [
+          0.004675261676311493,
+          0.0023166462779045105,
+          0.0069394707679748535
+        ],
+        "delta_limit": [
+          0.05,
+          0.05,
+          0.03
+        ],
+        "pose_ok": true,
+        "left_gripper_open": true,
+        "right_gripper_open": true
+      },
+      "elapsed_seconds": 206.01,
+      "variant": "baseline-cup-seed2-pathsfixed",
+      "base_commit": "ea36d9ec80bf09b522e4efc17b3cf5bb2b87af48",
+      "snapshot": "base + evaluation CLI",
+      "stage_reports": []
+    },
+    {
+      "case": "cup",
+      "seed": 2,
+      "instruction": "把杯子放到盘子里",
+      "objects": [
+        "cup",
+        "plate"
+      ],
+      "perception_mode": "oracle",
+      "stage_feedback": true,
+      "memory": "fresh isolated directory; no cross-case warmup",
+      "llm_model": "deepseek-v4-pro",
+      "vlm_model": "qwen-vl-max",
+      "gpu": "0, NVIDIA GeForce RTX 4060 Laptop GPU",
+      "max_agent_rounds": 3,
+      "status": "success",
+      "run_id": "20260927_223710_d7bf3f64",
+      "attempt_count": 1,
+      "success_check": {
+        "success": true,
+        "mode": "container_plate",
+        "object_name": "cup",
+        "target_name": "plate",
+        "object_pose": [
+          -0.028683247044682503,
+          -0.11728457361459732,
+          0.7479461431503296
+        ],
+        "target_pose": [
+          -0.03730763494968414,
+          -0.11894331127405167,
+          0.7409999966621399
+        ],
+        "delta": [
+          0.00862438790500164,
+          0.0016587376594543457,
+          0.006946146488189697
+        ],
+        "delta_limit": [
+          0.05,
+          0.05,
+          0.03
+        ],
+        "pose_ok": true,
+        "left_gripper_open": true,
+        "right_gripper_open": true
+      },
+      "elapsed_seconds": 223.71,
+      "variant": "feedback-cup-seed2",
+      "base_commit": "ea36d9ec80bf09b522e4efc17b3cf5bb2b87af48",
+      "snapshot": "base + feedback-memory improvement patch",
+      "stage_reports": [
+        {
+          "stage": "after_lift",
+          "decision": "continue",
+          "status": "ok",
+          "failure_type": "none",
+          "confidence": 0.95,
+          "evidence": [
+            "The cup is visible and appears to be held by the gripper, consistent with being lifted."
+          ],
+          "camera_requests": 3
+        },
+        {
+          "stage": "after_place",
+          "decision": "continue",
+          "status": "ok",
+          "failure_type": "none",
+          "confidence": 0.95,
+          "evidence": [
+            "cup is visibly placed on plate with correct orientation and contact"
+          ],
+          "camera_requests": 3
+        }
+      ]
+    }
+  ],
+  "implementation_commit": "493d582"
+}

@@ -1,19 +1,21 @@
 """Strategy-level memory for GAPA.
 
-The long-term memory is intentionally coarse. It stores a few reusable strategy
-types instead of concrete successful tasks such as ``playing_cards in cabinet``.
+Keep five coarse strategies, with a separate provenance archive for successes.
+Only compatible, scene-independent tuning references enter generation prompts;
+archived programs are never replayed or copied across scenes by this module.
 """
 
 from __future__ import annotations
 
 import ast
 import json
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..domain.api_spec import tuning_default_kwargs
+from ..domain.api_spec import API_SPECS, tuning_default_kwargs
 from ..domain.objects import CABINET_SOURCE_OBJECTS, COLOR_BLOCK_OBJECTS
 from ..domain.task import TaskDSL, normalize_task_dsl
 
@@ -136,6 +138,10 @@ class SuccessMemoryManager:
         # 返回：返回 Path 类型结果；调用方依赖该结构继续执行或生成诊断输出。
         return self.success_dir / "success_memory.jsonl"
 
+    @property
+    def episodes_path(self) -> Path:
+        return self.success_dir / "success_episodes.jsonl"
+
     def retrieve_strategy(self, task: TaskDSL) -> list[dict[str, Any]]:
         # 功能：执行 retrieve strategy 相关的业务逻辑，并把结果整理给调用方继续使用。
         # 参数：self：当前类实例，提供内部状态和依赖对象；task：标准化 TaskDSL 任务对象，描述目标物体、关系和约束。
@@ -175,7 +181,58 @@ class SuccessMemoryManager:
         items = self.retrieve_strategy(task)
         if not items:
             return "None."
-        return self._prompt_for_items(items, title="# Strategy Memory", subtitle="## Relevant Strategies")
+        prompt = self._prompt_for_items(items, title="# Strategy Memory", subtitle="## Relevant Strategies")
+        examples = self.retrieve_tuning_examples(task)
+        if examples:
+            prompt += "\n\n## Compatible successful-program tuning references\n"
+            prompt += (
+                "These are explicit parameters declared in successful atomic programs, "
+                "not per-call telemetry or guarantees for a new scene. Re-localize all "
+                "objects with api.pose / api.target_pose and choose arms from the current "
+                "scene; never replay historical coordinates, arm choices, or source code. "
+                "Treat these values as optional starting points within the API limits.\n"
+            )
+            for index, example in enumerate(examples, start=1):
+                prompt += f"- Reference {index}: `{json.dumps(example['tuning_calls'], ensure_ascii=False)}`\n"
+        return prompt
+
+    def retrieve_tuning_examples(self, task: TaskDSL, limit: int = 3) -> list[dict[str, Any]]:
+        """Return recent atomic successes for the same task and object context.
+
+        Strategy templates remain transferable between objects. Learned distances
+        are deliberately stricter: a cup's grasp parameters do not transfer to a
+        bowl, and a full composite program is not an independently tested subtask.
+        """
+        if limit <= 0 or not self.episodes_path.exists():
+            return []
+        task = normalize_task_dsl(task)
+        tasks = task.sub_tasks if task.is_composite else [task]
+        compatible = {json.dumps(item.canonical_dict(), sort_keys=True) for item in tasks}
+        result: list[dict[str, Any]] = []
+        for line in reversed(self.episodes_path.read_text(encoding="utf-8").splitlines()):
+            if not line.strip():
+                continue
+            episode = json.loads(line)
+            if episode.get("verification_scope") != "atomic_task_success":
+                continue
+            if json.dumps(episode.get("task"), sort_keys=True) not in compatible:
+                continue
+            # Re-extract using today's API whitelist/ranges, not stale persisted
+            # parameters if the API specification has changed since recording.
+            episode_task = TaskDSL.from_dict(episode["task"])
+            tuning_calls = _extract_tuning_calls(episode.get("source", ""), episode_task)
+            if not tuning_calls:
+                continue
+            result.append({
+                "strategy_id": episode["strategy_id"],
+                "run_id": episode["run_id"],
+                "recorded_at": episode["recorded_at"],
+                "task": episode["task"],
+                "tuning_calls": tuning_calls,
+            })
+            if len(result) >= limit:
+                break
+        return result
 
     def record_success(
         self,
@@ -189,11 +246,32 @@ class SuccessMemoryManager:
         # 功能：记录执行过程中的状态、轨迹或感知结果，便于回放和诊断；该方法属于 SuccessMemoryManager，会复用该类维护的上下文。。
         # 参数：self：当前类实例，提供内部状态和依赖对象；task：标准化 TaskDSL 任务对象，描述目标物体、关系和约束；source：待校验、重放或分析的 Python 源码文本；run_id：运行编号，用于读取历史结果或构造公开路径；instruction：用户输入的自然语言任务指令；parent_run_id：parent run id 输入，类型约束为 str | None，默认值为 None；subtask_index：subtask index 输入，类型约束为 int | None，默认值为 None。
         # 返回：无返回值；通过副作用更新环境、文件、对象状态或在失败时抛出异常。
-        del source, run_id, instruction, parent_run_id, subtask_index
+        # The caller owns success verification. A subtask record from the current
+        # orchestrator contains its parent's complete program, not an isolated
+        # successful subprogram; archive it without extracting tuning examples.
+        task = normalize_task_dsl(task)
         strategy_id = strategy_id_for_task(task)
         if strategy_id is None:
             return
         now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+        from_composite = parent_run_id is not None or subtask_index is not None
+        episode = {
+            "schema_version": 1,
+            "strategy_id": strategy_id,
+            "recorded_at": now,
+            "task": task.canonical_dict(),
+            "instruction": instruction,
+            "run_id": run_id,
+            "parent_run_id": parent_run_id,
+            "subtask_index": subtask_index,
+            "verification_scope": "parent_composite_success" if from_composite else "atomic_task_success",
+            "source_scope": "whole_parent_program" if from_composite else "atomic_program",
+            "source": source,
+            "tuning_calls": [] if from_composite else _extract_tuning_calls(source, task),
+        }
+        self.success_dir.mkdir(parents=True, exist_ok=True)
+        with self.episodes_path.open("a", encoding="utf-8") as archive:
+            archive.write(json.dumps(episode, ensure_ascii=False) + "\n")
         items = self._read_strategy_items()
         for item in items:
             if item.get("strategy_id") == strategy_id:
@@ -255,7 +333,13 @@ class SuccessMemoryManager:
         # 功能：拼接内部提示词模板，把任务、场景和约束整理给模型使用；该方法属于 SuccessMemoryManager，会复用该类维护的上下文。。
         # 参数：self：当前类实例，提供内部状态和依赖对象；items：items 输入，类型约束为 list[dict[str, Any]]；title：title 输入，类型约束为 str；subtitle：subtitle 输入，类型约束为 str。
         # 返回：返回 str 类型结果；调用方依赖该结构继续执行或生成诊断输出。
-        lines = [title, "", subtitle]
+        lines = [
+            title, "",
+            "Always re-localize objects and recompute target poses and arm choices "
+            "for the current scene. Strategy counts may include successful parent "
+            "composite runs; only atomic successes supply tuning references.",
+            "", subtitle,
+        ]
         for item in items:
             lines.extend([
                 "",
@@ -295,6 +379,71 @@ class SuccessMemoryManager:
             rendered = ", ".join(f"{key}={value!r}" for key, value in kwargs.items())
             parts.append(f"api.{method}({rendered})")
         return "; ".join(parts) if parts else "None"
+
+
+def _extract_tuning_calls(source: str, task: TaskDSL) -> list[dict[str, Any]]:
+    """Extract literal, in-range grasp/place/drawer parameters, never poses.
+
+    Values belong to their specific calls and object contexts. We do not flatten
+    multiple calls into a single method dictionary (which could mix stack levels
+    or objects), infer dynamic values, or execute archived source.
+    """
+    strategy_id = strategy_id_for_task(task)
+    methods = STRATEGY_TUNING_METHODS.get(strategy_id, ())
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, TypeError):
+        return []
+    objects = set(task.object_names) if task.intent == "arrange" else {task.object_name}
+    targets = objects | {"table"} if task.intent == "arrange" else {task.target_name}
+    result = []
+    for call in sorted((node for node in ast.walk(tree) if isinstance(node, ast.Call)), key=lambda node: node.lineno):
+        if not (
+            isinstance(call.func, ast.Attribute)
+            and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "api"
+            and call.func.attr in methods
+        ):
+            continue
+        method = call.func.attr
+        spec = API_SPECS[method]
+        args = dict(zip(spec.parameter_names, call.args))
+        args.update({kw.arg: kw.value for kw in call.keywords if kw.arg is not None})
+
+        def literal(name: str) -> Any:
+            try:
+                return ast.literal_eval(args[name])
+            except (KeyError, ValueError, TypeError, SyntaxError):
+                return None
+
+        object_name = literal("cabinet" if method == "open_drawer" else "name")
+        if method == "open_drawer":
+            if object_name != "cabinet" or task.target_name != "cabinet":
+                continue
+        elif not isinstance(object_name, str) or object_name not in objects:
+            continue
+        context = {"object_name": object_name}
+        if method == "place":
+            target_name, relation = literal("target_name"), literal("relation")
+            expected_relation = "on" if task.intent == "arrange" else task.relation
+            if not isinstance(target_name, str) or target_name not in targets or relation != expected_relation:
+                continue
+            context.update(target_name=target_name, relation=relation)
+        kwargs = {}
+        for parameter in spec.parameters:
+            if not parameter.tuning or parameter.name not in args:
+                continue
+            value = literal(parameter.name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                continue
+            if parameter.has_range() and not parameter.min_value <= value <= parameter.max_value:
+                continue
+            if isinstance(parameter.default, int) and not isinstance(value, int):
+                continue
+            kwargs[parameter.name] = value
+        if kwargs:
+            result.append({"api": method, **context, "kwargs": kwargs})
+    return result
 
 
 def extract_api_sequence(source: str) -> list[str]:
