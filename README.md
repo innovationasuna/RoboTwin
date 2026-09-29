@@ -28,17 +28,10 @@ GAPA builds on **RoboTwin 2.0** to turn natural-language instructions into execu
 | **Feedback-driven repair** | Adjust parameters inside supported skills, then diagnose and regenerate when local recovery is insufficient. |
 | **Task-relevant memory** | Retrieve strategy templates; optionally archive successful programs and reuse compatible skill-parameter references. |
 
-### Verification so far
-
-A fixed-seed cup-placement check passed with and without the new monitor on an RTX 4060 Laptop; **36 focused regression tests passed** in the recorded run. The replacement recovery demo records a real drop followed by a changed Agent-generated program and native task success.
-
-Optional VLM checks run at `after_lift` and `after_place`, **not at every control step**. Successful-example memory and visual stage feedback remain experimental; controlled success-rate and latency comparisons are pending. The runtime still uses simulator state and contact information. [Results, limitations and reproduction commands →](docs/experiments.md)
-
 ## Web interface
 
 ![GAPA frontend with scene configuration, camera views and recorded video](assets/files/gapa-web-ui.png)
 
-The frontend brings scene setup, perception options, task input, camera previews and execution video into one workspace. This screenshot renders the repository's actual frontend with archived diagnostic frames and a recorded recovery video; it is a **read-only preview, not a live simulation run**. Unavailable camera views are explicitly marked. [Screenshot provenance](docs/presentation.md)
 
 ## Try it locally
 
@@ -73,11 +66,10 @@ python -m gapa.evaluate --case cup --seed 2 --perception oracle \
 
 Add `--stage-feedback` to enable experimental visual checks, and use a **new output directory** for each run. Each trial allows up to three generation rounds. See [experiment settings and interpretation](docs/experiments.md).
 
-## Scope and evidence
+## Supported tasks
 
 The current task vocabulary covers supported object placement, selected objects placed into a cabinet, two- or three-block rows and stacks, small relative moves, and sequential compositions of supported tasks. Unsupported instructions are rejected before program generation.
 
-The current scope is simulation with a fixed supported object set. Controlled evaluation of memory and VLM stage feedback is pending; the [experiment page](docs/experiments.md) records development cases, comparison settings, and verification status.
 
 ## Built on RoboTwin
 
