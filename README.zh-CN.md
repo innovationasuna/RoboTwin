@@ -8,7 +8,9 @@
 原始 RoboTwin README 已保留为
 [`README.RoboTwin.md`](README.RoboTwin.md)。
 
-![GAPA 流程总览](assets/files/gapa-pipeline-overview.jpg)
+![GAPA 系统总览：多智能体机器人程序生成、执行反馈与策略记忆](assets/files/gapa-pipeline-final.png)
+
+*系统概念示意图，机器人场景为插画。*
 
 ## 相对原 RoboTwin 的主要改动
 

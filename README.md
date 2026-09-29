@@ -12,7 +12,9 @@ perception paths.
 The original RoboTwin README is preserved at
 [`README.RoboTwin.md`](README.RoboTwin.md).
 
-![GAPA pipeline overview](assets/files/gapa-pipeline-overview.jpg)
+![GAPA overview: multi-agent robot programming with feedback and strategy memory](assets/files/gapa-pipeline-final.png)
+
+*Conceptual overview; robot scenes are illustrations.*
 
 ## Main Changes From Original RoboTwin
 
