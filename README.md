@@ -1,59 +1,36 @@
-# GAPA: Memory-Augmented Robot Programming
+<h1 align="center">GAPA</h1>
+<p align="center"><strong>Memory-augmented robot programming with multi-agent feedback</strong></p>
+<p align="center">Natural language → robot skills → execution feedback → reusable experience</p>
+<p align="center"><a href="README.zh-CN.md">中文</a> · <strong>English</strong> · <a href="docs/architecture.md">Architecture</a> · <a href="docs/experiments.md">Experiments</a></p>
 
-[中文](README.zh-CN.md) · **English** · [Architecture](docs/architecture.md) · [Experiments](docs/experiments.md)
+GAPA builds on **RoboTwin 2.0** to turn natural-language instructions into executable robot skill programs. **Task parsing, program generation and feedback diagnosis** work together to compose skills, repair failed executions in the current scene, and retrieve task-relevant experience.
 
-**Turn natural-language instructions into robot skill programs, inspect execution feedback, and recover in the current scene.**
+![GAPA architecture: three agent roles, execution feedback and strategy memory](assets/files/gapa-overview.svg)
 
-GAPA is an experimental program-generation layer built on **RoboTwin 2.0**. Task parsing, code generation, and feedback diagnosis work as three cooperating agent roles. Generated programs compose a constrained skill library for grasping, placing, moving, and drawer manipulation. VLM localization, execution checks, and task-specific memory support the workflow.
+## See it in action
 
-## See it run
+<table>
+<tr><th width="50%">01 · Recover after a controlled drop</th><th width="50%">02 · Stack in the requested order</th></tr>
+<tr><td><img src="assets/demos/drop-recovery.gif" width="100%" alt="Controlled cup drop followed by agent-generated recovery"></td><td><img src="assets/demos/stack-card.gif" width="100%" alt="Robot stacks colored blocks in the requested order"></td></tr>
+<tr><td>An injected gripper release drops the cup. The Agent reobserves the scene, adjusts the grasp and completes placement without a scene reset.</td><td>A natural-language instruction becomes an ordered sequence of grasping and placement skills.</td></tr>
+</table>
 
-| Controlled drop and Agent recovery | Ordered block stacking |
-| :---: | :---: |
-| ![Controlled drop and Agent recovery](assets/demos/drop-recovery.gif) | ![Ordered block stacking](assets/demos/stack.gif) |
-| Injected gripper release makes the cup fall; the Agent reobserves, adjusts its grasp, and succeeds in the same scene. | A natural-language instruction becomes a sequence of robot skills. |
+*Left: a recorded controlled-fault trial. Right: a historical stacking demo. These illustrate behavior, not benchmark success rates. [Demo provenance →](assets/demos/README.md)*
 
-Left: a new controlled-fault trial with stage checks and Agent-generated recovery. Right: a historical stacking demo. Neither is a benchmark. See [record provenance and evaluation status](docs/experiments.md).
+## What makes it work
 
-## What the system does
+| Component | Role |
+| :--- | :--- |
+| **Three cooperating agents** | Parse goals, generate skill programs and diagnose failures through separate roles. |
+| **Grounded skill library** | Compose grasping, placement, movement and drawer skills; use Oracle state or VLM localization with depth for supported queries. |
+| **Feedback-driven repair** | Adjust parameters inside supported skills, then diagnose and regenerate when local recovery is insufficient. |
+| **Task-relevant memory** | Retrieve strategy templates; optionally archive successful programs and reuse compatible skill-parameter references. |
 
-- **Agent collaboration:** parse an instruction into a structured task, generate a skill program, and use execution evidence to guide a correction.
-- **Grounded skill execution:** obtain supported object or functional-point positions through Oracle state or VLM localization plus depth, then execute bounded skill calls.
-- **Two levels of recovery:** adjust motion parameters inside supported skills; if that fails, diagnose the failure and regenerate the program without resetting the scene.
-- **Task-specific memory:** retrieve relevant strategy templates for generation. An experimental extension archives successful programs and retrieves compatible skill-parameter references.
+### Verification so far
 
-**Experimental:** opt-in feedback at `after_lift` and `after_place` combines multi-view visual reports with a simulator-state lift check. These checks happen between skill stages, not continuously at every control step. Their overall effect on recovery and latency still needs controlled evaluation.
+A fixed-seed cup-placement check passed with and without the new monitor on an RTX 4060 Laptop; **36 focused regression tests passed** in the recorded run. The replacement recovery demo records a real drop followed by a changed Agent-generated program and native task success.
 
-## Local verification
-
-On an RTX 4060 Laptop, the fixed-seed cup-placement smoke run passed the native
-task check both before and after enabling the new monitor. The monitored run
-recorded `after_lift` and `after_place` observations; 36 focused regression tests
-passed. These are functional checks, not a measured success-rate improvement.
-[Results, limitations, and reproduction commands →](docs/experiments.md)
-
-## How it works
-
-```mermaid
-flowchart TD
-    I["Natural-language instruction"] --> P["Task Parser Agent"]
-    P --> C["Code Generation Agent"]
-    C --> G["Program validation"]
-    G --> S["Skill library: pick / place / move / drawer"]
-    S --> E["RoboTwin execution"]
-    V["Oracle OR VLM localization + depth"] --> S
-    E --> L["Motion / state feedback: local adjustment"]
-    L --> S
-    E --> K["Execution and task checks"]
-    E -. "opt-in stage images" .-> X["Experimental VLM stage feedback"]
-    X -. "detected failure" .-> F["Feedback Diagnosis Agent"]
-    K -- "failure" --> F
-    F -- "repair in the current scene" --> C
-    K -- "verified success" --> M["Strategy / successful-example memory"]
-    M -- "retrieve task-relevant context" --> C
-```
-
-The VLM path does **not** make this a vision-only robot controller. Motion primitives still use simulator actor and contact information, while final task success is checked by deterministic environment rules. [Architecture and boundaries →](docs/architecture.md)
+Optional VLM checks run at `after_lift` and `after_place`, **not at every control step**. Successful-example memory and visual stage feedback remain experimental; controlled success-rate and latency comparisons are pending. The runtime still uses simulator state and contact information. [Results, limitations and reproduction commands →](docs/experiments.md)
 
 ## Try it locally
 

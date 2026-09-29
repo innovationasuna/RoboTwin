@@ -28,3 +28,5 @@ physically fallen 0.08118 m. The head-view VLM reported failure while the active
 wrist-view VLM incorrectly reported success, both at 0.95 stated confidence.
 This diagnostic case motivated the hybrid stage check; it is an injected fault,
 not a naturally sampled test episode.
+
+`stack-card.gif` presents `stack.gif` on a square white canvas for equal-sized README demo panels; frames and playback timing are retained.
