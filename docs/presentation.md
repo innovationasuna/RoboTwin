@@ -9,3 +9,9 @@
 ## Illustrated overview revision
 
 The README now uses `assets/files/gapa-pipeline-refined.png`, edited from the original `gapa-pipeline-overview.jpg` with the built-in image generation tool. It preserves the illustrated tabletop scene and task callouts, reduces prose, and distinguishes three agent roles, skill execution, stage feedback and strategy memory. The robot scenes are conceptual illustrations, not execution evidence. The prior SVG and raster architecture remain available as detailed diagrams.
+
+## Embodiment and object consistency revision
+
+The current README image is `assets/files/gapa-pipeline-aloha.png`, edited in the ChatGPT web UI via ego-browser using the previous figure and a frame extracted from `assets/demos/stack.gif`. The active project configuration is `aloha-agilex` (`task_config/gapa_scene.yml`), not the separate `piper` or `franka-panda` configurations. Robot illustrations follow the recorded black-and-white angular AGILEX appearance. Localization, VLM, manipulation and failure illustrations use one red mug and white plate.
+
+Editing conversation: https://chatgpt.com/c/6abb4e99-c7fc-83e8-95d5-2015acd99ea3
