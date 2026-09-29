@@ -21,3 +21,9 @@ Editing conversation: https://chatgpt.com/c/6abb4e99-c7fc-83e8-95d5-2015acd99ea3
 The current README uses `gapa-pipeline-detail-v2.png`. This web-edited revision removes the large acronym heading and check tile, simplifies the five-skill layout, clarifies memory/program icons, uses a mug-shaped point cloud, and refines parallel gripper geometry and the exterior mug grasp.
 
 Editing conversation: https://chatgpt.com/c/6abb53e9-8374-83e8-87dc-5e32b5946eea
+
+## Block manipulation overview
+
+The README now uses `gapa-pipeline-block.png`: larger headline and a red block on a white plate consistently across the instruction, parser, manipulation, localization, point cloud, memory and failure illustrations. Recorded GIFs remain unchanged.
+
+Editing conversation: https://chatgpt.com/c/6abb563b-9848-83e8-88a2-4cb411016c0b

@@ -5,7 +5,7 @@
 
 GAPA builds on **RoboTwin 2.0** to turn natural-language instructions into executable robot skill programs. **Task parsing, program generation and feedback diagnosis** work together to compose skills, repair failed executions in the current scene, and retrieve task-relevant experience.
 
-![GAPA architecture: three agent roles, execution feedback and strategy memory](assets/files/gapa-pipeline-detail-v2.png)
+![GAPA architecture: three agent roles, execution feedback and strategy memory](assets/files/gapa-pipeline-block.png)
 
 *Conceptual overview; robot scenes are illustrations. Recorded demonstrations follow below.*
 
