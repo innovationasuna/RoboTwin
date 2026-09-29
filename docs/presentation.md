@@ -27,3 +27,9 @@ Editing conversation: https://chatgpt.com/c/6abb53e9-8374-83e8-87dc-5e32b5946eea
 The README now uses `gapa-pipeline-block.png`: larger headline and a red block on a white plate consistently across the instruction, parser, manipulation, localization, point cloud, memory and failure illustrations. Recorded GIFs remain unchanged.
 
 Editing conversation: https://chatgpt.com/c/6abb563b-9848-83e8-88a2-4cb411016c0b
+
+## Parallel gripper correction
+
+Current README asset: `gapa-pipeline-gripper.png`. All five rendered grippers now use a compact rectangular body and two straight parallel fingers. The figure remains a conceptual illustration.
+
+Editing conversation: https://chatgpt.com/c/6abb5a44-c128-83e8-906a-3500224a31df

@@ -5,7 +5,7 @@
 
 GAPA 基于 **RoboTwin 2.0**，将自然语言指令转化为可执行的机器人技能程序。**任务解析、程序生成与反馈诊断**三个 Agent 分工协作，组合技能完成操作，在当前场景中修正失败程序，并检索相关经验辅助后续任务。
 
-![GAPA 系统架构：三个 Agent、执行反馈与策略记忆](assets/files/gapa-pipeline-block.png)
+![GAPA 系统架构：三个 Agent、执行反馈与策略记忆](assets/files/gapa-pipeline-gripper.png)
 
 *系统概念示意图，机器人场景为插画；下方演示为实际录制。*
 
